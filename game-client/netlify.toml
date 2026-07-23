@@ -1,0 +1,40 @@
+[[redirects]]
+  from = "/api/auth/*"
+  to = "https://veltriz-auth-service.onrender.com/api/auth/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/wallet/*"
+  to = "https://veltriz-economy-service.onrender.com/api/wallet/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/jobs/*"
+  to = "https://veltriz-economy-service.onrender.com/api/jobs/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/market/*"
+  to = "https://veltriz-economy-service.onrender.com/api/market/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/character/*"
+  to = "https://veltriz-game-world-service.onrender.com/api/character/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/world/*"
+  to = "https://veltriz-game-world-service.onrender.com/api/world/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

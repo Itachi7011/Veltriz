@@ -1,0 +1,27 @@
+.veltriz-adminlayout {
+  min-height: 100vh;
+  background: var(--vza-bg-base);
+}
+
+.veltriz-adminlayout-content {
+  padding-top: calc(var(--vza-navbar-height) + 24px);
+  padding-bottom: 40px;
+  padding-left: 28px;
+  padding-right: 28px;
+  transition: margin-left var(--vza-transition-med);
+  min-height: 100vh;
+}
+
+@media (max-width: 900px) {
+  .veltriz-adminlayout-content {
+    margin-left: 0 !important;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .veltriz-adminlayout-content {
+    padding-top: calc(var(--vza-navbar-height) + 16px);
+  }
+}

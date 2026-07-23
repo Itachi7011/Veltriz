@@ -1,0 +1,138 @@
+/* ==========================================================================
+   VELTRIZ — GLOBAL BASE STYLES
+   Applies to all non-game pages (auth, character creation, admin, etc).
+   The Phaser canvas itself is intentionally NOT themed by this file — it
+   renders its own dark futuristic-but-blurry world regardless of light/dark
+   mode, per the original scope discussion.
+   ========================================================================== */
+
+:root {
+  --vz-color-primary: #7c3aed;
+  --vz-color-primary-hover: #6d28d9;
+  --vz-color-accent: #06b6d4;
+  --vz-color-accent-hover: #0891b2;
+  --vz-color-success: #22c55e;
+  --vz-color-danger: #ef4444;
+  --vz-color-warning: #f59e0b;
+
+  --vz-radius-sm: 6px;
+  --vz-radius-md: 10px;
+  --vz-radius-lg: 16px;
+
+  --vz-font-base: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --vz-font-mono: 'Consolas', 'Courier New', monospace;
+
+  --vz-transition-fast: 150ms ease;
+  --vz-transition-med: 280ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Light mode palette (default) */
+  --vz-bg-base: #f4f5fb;
+  --vz-bg-surface: #ffffff;
+  --vz-bg-surface-2: #f0f1f8;
+  --vz-text-primary: #14162b;
+  --vz-text-secondary: #5b5f7a;
+  --vz-border-color: #e2e4f0;
+  --vz-shadow-color: rgba(20, 22, 43, 0.08);
+}
+
+.dark {
+  --vz-bg-base: #0b0e17;
+  --vz-bg-surface: #131625;
+  --vz-bg-surface-2: #1a1e33;
+  --vz-text-primary: #eef0fb;
+  --vz-text-secondary: #9ca0c2;
+  --vz-border-color: #262b47;
+  --vz-shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--vz-font-base);
+  background: var(--vz-bg-base);
+  color: var(--vz-text-primary);
+  transition: background var(--vz-transition-med), color var(--vz-transition-med);
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
+}
+
+/* Fluid, responsive base typography */
+html {
+  font-size: clamp(14px, 1vw + 10px, 17px);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 0.5em 0;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0 0 1em 0;
+  line-height: 1.6;
+  color: var(--vz-text-secondary);
+}
+
+a {
+  color: var(--vz-color-accent);
+  text-decoration: none;
+  transition: color var(--vz-transition-fast);
+}
+
+a:hover {
+  color: var(--vz-color-accent-hover);
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Scrollbar theming */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--vz-bg-surface-2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vz-color-primary);
+  border-radius: 10px;
+}
+
+/* Utility: visually-hidden but accessible */
+.vz-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focus visibility for keyboard nav (accessibility) */
+:focus-visible {
+  outline: 2px solid var(--vz-color-accent);
+  outline-offset: 2px;
+}
+
+.veltriz-spin {
+  animation: veltriz-spin-rotate 1s linear infinite;
+}
+
+@keyframes veltriz-spin-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

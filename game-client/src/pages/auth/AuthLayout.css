@@ -1,0 +1,317 @@
+/* ==========================================================================
+   veltriz-auth-* — shared shell + form styles for Login/Signup/Forgot/Verify
+   ========================================================================== */
+
+.veltriz-auth-shell {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  background: var(--vz-bg-base);
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .veltriz-auth-shell {
+    grid-template-columns: 1fr;
+  }
+  .veltriz-auth-brand-panel {
+    display: none;
+  }
+}
+
+.veltriz-auth-theme-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--vz-border-color);
+  background: var(--vz-bg-surface);
+  color: var(--vz-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px var(--vz-shadow-color);
+  transition: transform var(--vz-transition-fast), background var(--vz-transition-med);
+}
+
+.veltriz-auth-theme-toggle:hover {
+  transform: rotate(20deg) scale(1.08);
+}
+
+/* ---- Brand panel (left) ---- */
+.veltriz-auth-brand-panel {
+  position: relative;
+  background: linear-gradient(160deg, #17123a 0%, #0b0e17 60%, #06121a 100%);
+  color: #f4f5ff;
+  display: flex;
+  align-items: center;
+  padding: 64px;
+  overflow: hidden;
+}
+
+.veltriz-auth-brand-glow {
+  position: absolute;
+  inset: -40% -20% auto auto;
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.35), transparent 60%);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.veltriz-auth-brand-content {
+  position: relative;
+  z-index: 1;
+  max-width: 460px;
+}
+
+.veltriz-auth-brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 2px;
+  color: #a78bfa;
+  margin-bottom: 40px;
+}
+
+.veltriz-auth-brand-tagline {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  background: linear-gradient(90deg, #f4f5ff, #a78bfa 60%, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 20px;
+}
+
+.veltriz-auth-brand-desc {
+  color: #c4c7e0;
+  font-size: 1rem;
+  margin-bottom: 28px;
+}
+
+.veltriz-auth-brand-points {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.veltriz-auth-brand-points li {
+  position: relative;
+  padding-left: 24px;
+  color: #d7d9f2;
+  font-size: 0.92rem;
+}
+
+.veltriz-auth-brand-points li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #22d3ee);
+}
+
+/* ---- Form panel (right) ---- */
+.veltriz-auth-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+
+.veltriz-auth-form-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--vz-bg-surface);
+  border: 1px solid var(--vz-border-color);
+  border-radius: var(--vz-radius-lg);
+  padding: clamp(24px, 4vw, 40px);
+  box-shadow: 0 20px 60px var(--vz-shadow-color);
+  animation: veltriz-auth-fade-in 420ms ease;
+}
+
+@keyframes veltriz-auth-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.veltriz-auth-form-title {
+  font-size: 1.6rem;
+  color: var(--vz-text-primary);
+  margin-bottom: 4px;
+}
+
+.veltriz-auth-form-subtitle {
+  color: var(--vz-text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 24px;
+}
+
+/* ---- Reusable form primitives ---- */
+.veltriz-auth-field {
+  margin-bottom: 18px;
+}
+
+.veltriz-auth-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--vz-text-secondary);
+  margin-bottom: 6px;
+}
+
+.veltriz-auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.veltriz-auth-input-wrap svg {
+  position: absolute;
+  left: 14px;
+  color: var(--vz-text-secondary);
+  pointer-events: none;
+}
+
+.veltriz-auth-input {
+  width: 100%;
+  padding: 12px 14px 12px 42px;
+  border-radius: var(--vz-radius-md);
+  border: 1.5px solid var(--vz-border-color);
+  background: var(--vz-bg-surface-2);
+  color: var(--vz-text-primary);
+  font-size: 0.95rem;
+  transition: border-color var(--vz-transition-fast), box-shadow var(--vz-transition-fast);
+}
+
+.veltriz-auth-input:focus {
+  outline: none;
+  border-color: var(--vz-color-primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+
+.veltriz-auth-input-toggle {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--vz-text-secondary);
+  cursor: pointer;
+  display: flex;
+  padding: 4px;
+}
+
+.veltriz-auth-error {
+  color: var(--vz-color-danger);
+  font-size: 0.78rem;
+  margin-top: 5px;
+}
+
+.veltriz-auth-submit {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: var(--vz-radius-md);
+  background: linear-gradient(135deg, var(--vz-color-primary), var(--vz-color-accent));
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.98rem;
+  cursor: pointer;
+  transition: transform var(--vz-transition-fast), box-shadow var(--vz-transition-fast), opacity var(--vz-transition-fast);
+  box-shadow: 0 10px 24px rgba(124, 58, 237, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.veltriz-auth-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(124, 58, 237, 0.36);
+}
+
+.veltriz-auth-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.veltriz-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  color: var(--vz-text-secondary);
+  font-size: 0.8rem;
+}
+
+.veltriz-auth-divider::before,
+.veltriz-auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--vz-border-color);
+}
+
+.veltriz-auth-google-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--vz-radius-md);
+  border: 1.5px solid var(--vz-border-color);
+  background: var(--vz-bg-surface-2);
+  color: var(--vz-text-primary);
+  font-weight: 600;
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: background var(--vz-transition-fast), transform var(--vz-transition-fast);
+}
+
+.veltriz-auth-google-btn:hover {
+  background: var(--vz-bg-surface);
+  transform: translateY(-1px);
+}
+
+.veltriz-auth-footer-link {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--vz-text-secondary);
+}
+
+.veltriz-auth-inline-link {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.veltriz-auth-remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  font-size: 0.84rem;
+  color: var(--vz-text-secondary);
+}
+
+.veltriz-auth-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}

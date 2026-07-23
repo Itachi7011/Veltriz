@@ -1,0 +1,115 @@
+/* ==========================================================================
+   VELTRIZ ADMIN — GLOBAL BASE STYLES
+   ========================================================================== */
+
+:root {
+  --vza-color-primary: #0ea5e9;
+  --vza-color-primary-hover: #0284c7;
+  --vza-color-accent: #7c3aed;
+  --vza-color-accent-hover: #6d28d9;
+  --vza-color-success: #22c55e;
+  --vza-color-danger: #ef4444;
+  --vza-color-warning: #f59e0b;
+
+  --vza-radius-sm: 6px;
+  --vza-radius-md: 10px;
+  --vza-radius-lg: 16px;
+
+  --vza-font-base: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --vza-transition-fast: 150ms ease;
+  --vza-transition-med: 280ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --vza-sidebar-width-collapsed: 76px;
+  --vza-sidebar-width-expanded: 260px;
+  --vza-navbar-height: 68px;
+
+  --vza-bg-base: #f2f4fa;
+  --vza-bg-surface: #ffffff;
+  --vza-bg-surface-2: #eef0f8;
+  --vza-text-primary: #12142a;
+  --vza-text-secondary: #5b5f7a;
+  --vza-border-color: #e0e3f0;
+  --vza-shadow-color: rgba(18, 20, 42, 0.08);
+}
+
+.dark {
+  --vza-bg-base: #0a0d16;
+  --vza-bg-surface: #121627;
+  --vza-bg-surface-2: #1a1f36;
+  --vza-text-primary: #eef0fb;
+  --vza-text-secondary: #949ac2;
+  --vza-border-color: #232847;
+  --vza-shadow-color: rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--vza-font-base);
+  background: var(--vza-bg-base);
+  color: var(--vza-text-primary);
+  transition: background var(--vza-transition-med), color var(--vza-transition-med);
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  font-size: clamp(14px, 1vw + 10px, 17px);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 0.5em 0;
+}
+
+p {
+  margin: 0 0 1em 0;
+  color: var(--vza-text-secondary);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--vza-color-primary);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: var(--vza-bg-surface-2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vza-color-primary);
+  border-radius: 10px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vza-color-primary);
+  outline-offset: 2px;
+}
+
+.vza-spin {
+  animation: vza-spin-rotate 1s linear infinite;
+}
+
+@keyframes vza-spin-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes vza-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

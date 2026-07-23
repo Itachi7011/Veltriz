@@ -1,0 +1,440 @@
+/* ==========================================================================
+   veltriz-game-* — the in-game overlay UI. Deliberately NOT tied to the
+   light/dark ThemeContext (per scope discussion) — the game world always
+   uses this one dark, HUD-style look regardless of the player's site theme.
+   ========================================================================== */
+
+.veltriz-game-shell {
+  position: fixed;
+  inset: 0;
+  background: #0d1018;
+  overflow: hidden;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.veltriz-game-canvas-host {
+  position: absolute;
+  inset: 0;
+}
+
+.veltriz-game-canvas-host canvas {
+  display: block;
+}
+
+.veltriz-game-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #dfe3ff;
+  background: #0d1018;
+  z-index: 20;
+}
+
+.veltriz-game-loading-spinner {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 4px solid #262b47;
+  border-top-color: #7c3aed;
+  animation: veltriz-spin-rotate 900ms linear infinite;
+}
+
+/* ---- HUD ---- */
+.veltriz-game-hud {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 10;
+  pointer-events: none;
+  flex-wrap: wrap;
+}
+
+.veltriz-game-hud-identity,
+.veltriz-game-hud-balance,
+.veltriz-game-hud-controls {
+  background: rgba(19, 22, 37, 0.78);
+  backdrop-filter: blur(6px);
+  border: 1px solid #2b2f52;
+  border-radius: 10px;
+  padding: 8px 14px;
+  color: #e8eaff;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.veltriz-game-hud-name {
+  font-weight: 700;
+}
+
+.veltriz-game-hud-balance {
+  color: #ffd76a;
+  font-weight: 700;
+}
+
+.veltriz-game-hud-controls {
+  margin-left: auto;
+  color: #9ca0c2;
+  font-size: 0.75rem;
+}
+
+.veltriz-game-hud-controls kbd {
+  background: #262b47;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ---- Interaction prompt ---- */
+.veltriz-game-interact-prompt {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(19, 22, 37, 0.9);
+  border: 1px solid #7c3aed;
+  border-radius: 10px;
+  padding: 10px 18px;
+  color: #fff;
+  font-size: 0.9rem;
+  z-index: 10;
+  animation: veltriz-auth-fade-in 200ms ease;
+}
+
+.veltriz-game-interact-prompt kbd {
+  background: #7c3aed;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-weight: 700;
+}
+
+/* ---- Panels ---- */
+.veltriz-game-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 6, 12, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  padding: 20px;
+}
+
+.veltriz-game-panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #131625;
+  border: 1px solid #2b2f52;
+  border-radius: 16px;
+  padding: 24px;
+  color: #e8eaff;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
+.veltriz-game-panel-wide {
+  max-width: 560px;
+}
+
+.veltriz-game-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.veltriz-game-panel-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.veltriz-game-panel-x {
+  background: none;
+  border: none;
+  color: #9ca0c2;
+  cursor: pointer;
+}
+
+.veltriz-game-panel-close {
+  margin-top: 16px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  background: #262b47;
+  color: #fff;
+  cursor: pointer;
+}
+
+.veltriz-game-btn {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid #2b2f52;
+  background: #1c2038;
+  color: #e8eaff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.veltriz-game-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.veltriz-game-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.veltriz-game-btn.primary {
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  border: none;
+}
+
+.veltriz-game-btn.danger {
+  background: #3a1620;
+  border-color: #7a2334;
+  color: #ff8fa3;
+}
+
+/* Job panel */
+.veltriz-game-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.veltriz-game-job-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #1a1e33;
+  border: 1px solid #262b47;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.veltriz-game-job-title {
+  font-weight: 700;
+}
+
+.veltriz-game-job-desc {
+  font-size: 0.78rem;
+  color: #9ca0c2;
+}
+
+.veltriz-game-job-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #ffd76a;
+}
+
+.veltriz-game-current-job {
+  background: #1a1e33;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.veltriz-game-job-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* Market panel */
+.veltriz-game-market-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.veltriz-game-market-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #1a1e33;
+  border: 1px solid #262b47;
+  border-radius: 10px;
+  padding: 12px 14px;
+  flex-wrap: wrap;
+}
+
+.veltriz-game-market-name {
+  font-weight: 700;
+}
+
+.veltriz-game-market-price {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.85rem;
+  color: #ffd76a;
+  margin: 3px 0;
+}
+
+.veltriz-game-market-owned {
+  font-size: 0.72rem;
+  color: #9ca0c2;
+}
+
+.veltriz-game-market-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.veltriz-game-market-qty {
+  width: 54px;
+  padding: 7px;
+  border-radius: 6px;
+  border: 1px solid #2b2f52;
+  background: #0f1220;
+  color: #fff;
+  text-align: center;
+}
+
+/* Wallet panel */
+.veltriz-game-wallet-balance {
+  background: linear-gradient(135deg, #1a1e33, #232a4a);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.veltriz-game-wallet-balance span {
+  font-size: 0.78rem;
+  color: #9ca0c2;
+}
+
+.veltriz-game-wallet-balance strong {
+  font-size: 1.8rem;
+  color: #ffd76a;
+}
+
+.veltriz-game-wallet-subheading {
+  font-size: 0.9rem;
+  color: #9ca0c2;
+  margin-bottom: 10px;
+}
+
+.veltriz-game-tx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.veltriz-game-tx-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #1a1e33;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.veltriz-game-tx-desc {
+  flex: 1;
+}
+
+.veltriz-game-tx-date {
+  font-size: 0.7rem;
+  color: #6b7094;
+}
+
+.veltriz-game-tx-amount.positive {
+  color: #22c55e;
+  font-weight: 700;
+}
+
+.veltriz-game-tx-amount.negative {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+/* Pause menu */
+.veltriz-game-pause-menu {
+  width: 100%;
+  max-width: 320px;
+  background: #131625;
+  border: 1px solid #2b2f52;
+  border-radius: 16px;
+  padding: 28px;
+  text-align: center;
+  color: #e8eaff;
+}
+
+.veltriz-game-pause-menu h2 {
+  margin-bottom: 20px;
+}
+
+.veltriz-game-pause-btn {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px solid #2b2f52;
+  background: #1c2038;
+  color: #e8eaff;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.veltriz-game-pause-btn.primary {
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  border: none;
+}
+
+.veltriz-game-pause-btn.danger {
+  background: #3a1620;
+  border-color: #7a2334;
+  color: #ff8fa3;
+}
+
+.veltriz-game-pause-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.veltriz-game-pause-hint {
+  font-size: 0.75rem;
+  color: #6b7094;
+  margin-top: 8px;
+}
+
+@media (max-width: 600px) {
+  .veltriz-game-hud {
+    font-size: 0.8rem;
+  }
+  .veltriz-game-hud-controls {
+    display: none; /* not enough room on small phones; the E/Esc prompts still show contextually */
+  }
+}

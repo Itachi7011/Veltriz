@@ -1,0 +1,211 @@
+.veltriz-adminauth-shell {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--vza-bg-base);
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .veltriz-adminauth-shell {
+    grid-template-columns: 1fr;
+  }
+  .veltriz-adminauth-brand-panel {
+    display: none;
+  }
+}
+
+.veltriz-adminauth-theme-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--vza-border-color);
+  background: var(--vza-bg-surface);
+  color: var(--vza-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.veltriz-adminauth-brand-panel {
+  position: relative;
+  background: linear-gradient(160deg, #071322 0%, #0a0d16 60%, #130a22 100%);
+  color: #f4f5ff;
+  display: flex;
+  align-items: center;
+  padding: 64px;
+  overflow: hidden;
+}
+
+.veltriz-adminauth-brand-glow {
+  position: absolute;
+  inset: -40% -20% auto auto;
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.3), transparent 60%);
+  filter: blur(10px);
+}
+
+.veltriz-adminauth-brand-content {
+  position: relative;
+  z-index: 1;
+  max-width: 440px;
+}
+
+.veltriz-adminauth-brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: 1.5px;
+  color: #38bdf8;
+  margin-bottom: 36px;
+}
+
+.veltriz-adminauth-brand-tagline {
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  background: linear-gradient(90deg, #f4f5ff, #38bdf8 60%, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 18px;
+}
+
+.veltriz-adminauth-brand-desc {
+  color: #c4c7e0;
+  font-size: 0.98rem;
+}
+
+.veltriz-adminauth-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+
+.veltriz-adminauth-form-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--vza-bg-surface);
+  border: 1px solid var(--vza-border-color);
+  border-radius: var(--vza-radius-lg);
+  padding: clamp(24px, 4vw, 38px);
+  box-shadow: 0 20px 60px var(--vza-shadow-color);
+  animation: vza-fade-in 400ms ease;
+}
+
+.veltriz-adminauth-form-title {
+  font-size: 1.5rem;
+  color: var(--vza-text-primary);
+  margin-bottom: 4px;
+}
+
+.veltriz-adminauth-form-subtitle {
+  color: var(--vza-text-secondary);
+  font-size: 0.88rem;
+  margin-bottom: 22px;
+}
+
+.veltriz-adminauth-field {
+  margin-bottom: 16px;
+}
+
+.veltriz-adminauth-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--vza-text-secondary);
+  margin-bottom: 6px;
+}
+
+.veltriz-adminauth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.veltriz-adminauth-input-wrap svg {
+  position: absolute;
+  left: 14px;
+  color: var(--vza-text-secondary);
+  pointer-events: none;
+}
+
+.veltriz-adminauth-input {
+  width: 100%;
+  padding: 11px 14px 11px 42px;
+  border-radius: var(--vza-radius-md);
+  border: 1.5px solid var(--vza-border-color);
+  background: var(--vza-bg-surface-2);
+  color: var(--vza-text-primary);
+  font-size: 0.94rem;
+}
+
+.veltriz-adminauth-input:focus {
+  outline: none;
+  border-color: var(--vza-color-primary);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.16);
+}
+
+.veltriz-adminauth-input-toggle {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--vza-text-secondary);
+  cursor: pointer;
+}
+
+.veltriz-adminauth-error {
+  color: var(--vza-color-danger);
+  font-size: 0.76rem;
+  margin-top: 5px;
+}
+
+.veltriz-adminauth-submit {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: var(--vza-radius-md);
+  background: linear-gradient(135deg, var(--vza-color-primary), var(--vza-color-accent));
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.96rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.25);
+  transition: transform 150ms ease;
+}
+
+.veltriz-adminauth-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.veltriz-adminauth-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.veltriz-adminauth-footer-link {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--vza-text-secondary);
+}
+
+.veltriz-adminauth-inline-link {
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--vza-color-primary);
+}

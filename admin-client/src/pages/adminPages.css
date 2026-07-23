@@ -1,0 +1,200 @@
+.veltriz-adminpage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.veltriz-adminpage-title {
+  font-size: 1.5rem;
+  color: var(--vza-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.veltriz-adminpage-subtitle {
+  color: var(--vza-text-secondary);
+  font-size: 0.88rem;
+  margin-top: 2px;
+}
+
+.veltriz-adminpage-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.veltriz-adminpage-stat-card {
+  background: var(--vza-bg-surface);
+  border: 1px solid var(--vza-border-color);
+  border-radius: var(--vza-radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform var(--vza-transition-fast), box-shadow var(--vza-transition-fast);
+}
+
+.veltriz-adminpage-stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px var(--vza-shadow-color);
+}
+
+.veltriz-adminpage-stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--vza-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--vza-color-primary), var(--vza-color-accent));
+  color: #fff;
+}
+
+.veltriz-adminpage-stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--vza-text-primary);
+}
+
+.veltriz-adminpage-stat-label {
+  font-size: 0.8rem;
+  color: var(--vza-text-secondary);
+}
+
+.veltriz-adminpage-card {
+  background: var(--vza-bg-surface);
+  border: 1px solid var(--vza-border-color);
+  border-radius: var(--vza-radius-lg);
+  padding: 22px;
+  margin-bottom: 20px;
+}
+
+.veltriz-adminpage-table-wrap {
+  overflow-x: auto;
+}
+
+.veltriz-adminpage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.veltriz-adminpage-table th {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--vza-text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--vza-border-color);
+  white-space: nowrap;
+}
+
+.veltriz-adminpage-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--vza-border-color);
+  color: var(--vza-text-primary);
+  vertical-align: middle;
+}
+
+.veltriz-adminpage-table tr:hover td {
+  background: var(--vza-bg-surface-2);
+}
+
+.veltriz-adminpage-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.veltriz-adminpage-badge.active {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+.veltriz-adminpage-badge.suspended {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
+
+.veltriz-adminpage-badge.banned {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+
+.veltriz-adminpage-btn {
+  padding: 8px 14px;
+  border-radius: var(--vza-radius-sm);
+  border: 1px solid var(--vza-border-color);
+  background: var(--vza-bg-surface-2);
+  color: var(--vza-text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform var(--vza-transition-fast);
+}
+
+.veltriz-adminpage-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.veltriz-adminpage-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.veltriz-adminpage-btn.primary {
+  background: linear-gradient(135deg, var(--vza-color-primary), var(--vza-color-accent));
+  border: none;
+  color: #fff;
+}
+
+.veltriz-adminpage-btn.danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--vza-color-danger);
+}
+
+.veltriz-adminpage-input,
+.veltriz-adminpage-select {
+  padding: 9px 12px;
+  border-radius: var(--vza-radius-sm);
+  border: 1.5px solid var(--vza-border-color);
+  background: var(--vza-bg-surface-2);
+  color: var(--vza-text-primary);
+  font-size: 0.85rem;
+}
+
+.veltriz-adminpage-form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.veltriz-adminpage-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--vza-text-secondary);
+}
+
+.veltriz-adminpage-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+  font-size: 0.82rem;
+  color: var(--vza-text-secondary);
+}
