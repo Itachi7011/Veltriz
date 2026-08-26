@@ -9,12 +9,17 @@ const CharacterSchema = new mongoose.Schema(
     city: { type: String, required: true }, // city code, e.g. 'DEL'
     background: { type: String, enum: ['poor', 'middle', 'rich'], required: true },
 
-    // Deliberately simple "blurry" avatar — a few color/style knobs the
-    // frontend renders as a low-detail sprite, no uploaded art needed.
+    // Drives a real jointed 3D character model client-side (proper body,
+    // hands, face, hair) — not a flat sprite anymore, so this now also
+    // tracks gender/hairstyle/pants/shoes instead of just 3 color knobs.
     appearance: {
+      gender: { type: String, enum: ['male', 'female'], default: 'male' },
       skinTone: { type: String, default: '#c68863' },
       outfitColor: { type: String, default: '#3b82f6' },
       hairColor: { type: String, default: '#2b2b2b' },
+      hairStyle: { type: String, enum: ['short', 'buzz', 'long', 'ponytail', 'bald'], default: 'short' },
+      pantsColor: { type: String, default: '#232842' },
+      shoeColor: { type: String, default: '#171a26' },
     },
 
     mapId: { type: String, default: 'delhi_cp_district' },
@@ -29,6 +34,13 @@ const CharacterSchema = new mongoose.Schema(
       energy: { type: Number, default: 100, min: 0, max: 100 },
       happiness: { type: Number, default: 70, min: 0, max: 100 },
     },
+
+    // Separate cooldown tracker from Park's relax, so being on cooldown at
+    // one doesn't affect the other — see character.controller.js.
+    lastGymAt: { type: Date },
+    lastRelaxAt: { type: Date },
+    lastCinemaAt: { type: Date },
+    lastRelocateAt: { type: Date },
 
     lastSavedAt: { type: Date, default: Date.now },
     lastOnlineAt: { type: Date },

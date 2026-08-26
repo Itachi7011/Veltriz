@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ShieldAlert, ShieldCheck, Unlock, Coins } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, ShieldCheck, Unlock, Coins, Flame, RotateCcw } from 'lucide-react';
 import Swal from 'sweetalert2';
 import http from '../../lib/httpClient';
 import '../adminPages.css';
@@ -45,11 +45,12 @@ const UserDetail = () => {
     }
   };
 
-  const adjustWallet = async (direction) => {
+  const adjustWallet = async (direction, currency = 'vc') => {
+    const label = currency === 'shards' ? 'Chrono Shards' : 'VC';
     const { value: form } = await Swal.fire({
-      title: direction === 'credit' ? 'Credit wallet' : 'Debit wallet',
+      title: `${direction === 'credit' ? 'Credit' : 'Debit'} ${label}`,
       html:
-        '<input id="swal-amount" class="swal2-input" type="number" placeholder="Amount (VC)">' +
+        `<input id="swal-amount" class="swal2-input" type="number" placeholder="Amount (${label})">` +
         '<input id="swal-reason" class="swal2-input" placeholder="Reason (shown in ledger)">',
       focusConfirm: false,
       showCancelButton: true,
@@ -68,7 +69,8 @@ const UserDetail = () => {
     if (!form) return;
     setBusy(true);
     try {
-      const endpoint = direction === 'credit' ? 'credit' : 'debit';
+      const suffix = currency === 'shards' ? '-shards' : '';
+      const endpoint = `${direction === 'credit' ? 'credit' : 'debit'}${suffix}`;
       await http.post(`/api/economy/wallets/${data.user._id}/${endpoint}`, form);
       await load();
       Swal.fire({ icon: 'success', title: 'Wallet updated', timer: 1500, showConfirmButton: false, ...swalTheme });
@@ -79,10 +81,23 @@ const UserDetail = () => {
     }
   };
 
+  const resetPlayerHeat = async () => {
+    setBusy(true);
+    try {
+      await http.post(`/api/crime-control/heat/${data.user._id}/reset`);
+      await load();
+      Swal.fire({ icon: 'success', title: 'Heat reset', timer: 1500, showConfirmButton: false, ...swalTheme });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Failed', text: err.response?.data?.message, ...swalTheme });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (isLoading) return <p>Loading…</p>;
   if (!data) return <p>User not found.</p>;
 
-  const { user, wallet, recentTransactions = [], recentLogs = [] } = data;
+  const { user, wallet, recentTransactions = [], heat, recentCrimeRecords = [], recentLogs = [] } = data;
 
   return (
     <div>
@@ -106,6 +121,22 @@ const UserDetail = () => {
           <div className="veltriz-adminpage-stat-value">{wallet ? wallet.balance.toLocaleString() : '—'}</div>
           <div className="veltriz-adminpage-stat-label">Wallet balance (VC){wallet?.isLocked ? ' — LOCKED' : ''}</div>
         </div>
+        <div className="veltriz-adminpage-stat-card">
+          <div className="veltriz-adminpage-stat-icon" style={{ color: '#a78bfa' }}>
+            <Coins size={20} />
+          </div>
+          <div className="veltriz-adminpage-stat-value" style={{ color: '#a78bfa' }}>
+            {wallet ? (wallet.chronoShards || 0).toLocaleString() : '—'}
+          </div>
+          <div className="veltriz-adminpage-stat-label">Chrono Shards</div>
+        </div>
+        <div className="veltriz-adminpage-stat-card">
+          <div className="veltriz-adminpage-stat-icon">
+            <Flame size={20} />
+          </div>
+          <div className="veltriz-adminpage-stat-value">{heat ? Math.round(heat.heat) : 0}/100</div>
+          <div className="veltriz-adminpage-stat-label">Crime heat{heat?.heat >= 70 ? ' — DANGEROUS' : ''}</div>
+        </div>
       </div>
 
       <div className="veltriz-adminpage-card">
@@ -123,15 +154,32 @@ const UserDetail = () => {
           <button className="veltriz-adminpage-btn" disabled={busy} onClick={unlock}>
             <Unlock size={14} /> Clear login lockout
           </button>
+          <button className="veltriz-adminpage-btn" disabled={busy || !heat?.heat} onClick={resetPlayerHeat}>
+            <RotateCcw size={14} /> Reset crime heat
+          </button>
         </div>
 
         <h3>Wallet actions</h3>
         <div className="veltriz-adminpage-form-row">
           <button className="veltriz-adminpage-btn primary" disabled={busy || !wallet} onClick={() => adjustWallet('credit')}>
-            <Coins size={14} /> Credit wallet
+            <Coins size={14} /> Credit VC
           </button>
           <button className="veltriz-adminpage-btn danger" disabled={busy || !wallet} onClick={() => adjustWallet('debit')}>
-            <Coins size={14} /> Debit wallet
+            <Coins size={14} /> Debit VC
+          </button>
+          <button
+            className="veltriz-adminpage-btn primary"
+            disabled={busy || !wallet}
+            onClick={() => adjustWallet('credit', 'shards')}
+          >
+            <Coins size={14} /> Credit Chrono Shards
+          </button>
+          <button
+            className="veltriz-adminpage-btn danger"
+            disabled={busy || !wallet}
+            onClick={() => adjustWallet('debit', 'shards')}
+          >
+            <Coins size={14} /> Debit Chrono Shards
           </button>
         </div>
         {!wallet && <p style={{ fontSize: '0.8rem' }}>This player hasn't created a character/wallet yet.</p>}
@@ -166,6 +214,44 @@ const UserDetail = () => {
                       {tx.amount >= 0 ? '+' : ''}
                       {tx.amount.toLocaleString()}
                     </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="veltriz-adminpage-card">
+        <h3 style={{ marginTop: 0 }}>Recent crime attempts</h3>
+        <div className="veltriz-adminpage-table-wrap">
+          <table className="veltriz-adminpage-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Action</th>
+                <th>Outcome</th>
+                <th>Payout</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentCrimeRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="veltriz-adminpage-empty">
+                    No crime attempts.
+                  </td>
+                </tr>
+              ) : (
+                recentCrimeRecords.map((r) => (
+                  <tr key={r._id}>
+                    <td>{new Date(r.createdAt).toLocaleString()}</td>
+                    <td>{r.actionKey}</td>
+                    <td>
+                      <span className={`veltriz-adminpage-badge ${r.success ? 'active' : 'banned'}`}>
+                        {r.success ? 'Success' : 'Caught'}
+                      </span>
+                    </td>
+                    <td>{r.payout > 0 ? `+${r.payout.toLocaleString()} VC` : '—'}</td>
                   </tr>
                 ))
               )}

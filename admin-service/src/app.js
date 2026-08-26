@@ -10,6 +10,8 @@ const adminAuthRoutes = require('./routes/adminAuth.routes');
 const usersRoutes = require('./routes/users.routes');
 const economyRoutes = require('./routes/economy.routes');
 const logsRoutes = require('./routes/logs.routes');
+const worldRoutes = require('./routes/world.routes');
+const crimeRoutes = require('./routes/crime.routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
 
@@ -47,6 +49,8 @@ app.use('/api/admin-auth', adminAuthRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/economy', economyRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/simulation', worldRoutes);
+app.use('/api/crime-control', crimeRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

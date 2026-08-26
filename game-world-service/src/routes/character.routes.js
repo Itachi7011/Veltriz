@@ -9,5 +9,9 @@ const { createCharacterSchema, savePositionSchema } = require('../validators/cha
 router.post('/', protect, validate(createCharacterSchema), ctrl.createCharacter);
 router.get('/me', protect, ctrl.getMyCharacter);
 router.patch('/position', protect, validate(savePositionSchema), ctrl.savePosition);
+router.post('/relax', protect, ctrl.relaxAtPark);
+router.post('/gym', protect, ctrl.workoutAtGym);
+router.post('/cinema', protect, ctrl.watchMovieAtCinema);
+router.post('/relocate', protect, ctrl.relocate);
 
 module.exports = router;

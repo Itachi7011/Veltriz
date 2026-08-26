@@ -15,9 +15,22 @@ export default defineConfig({
       '/api/wallet': 'http://localhost:5001',
       '/api/jobs': 'http://localhost:5001',
       '/api/market': 'http://localhost:5001',
+      '/api/casino': 'http://localhost:5001',
+      '/api/school': 'http://localhost:5001',
+      '/api/creditunion': 'http://localhost:5001',
+      '/api/insurance': 'http://localhost:5001',
+      '/api/lottery': 'http://localhost:5001',
       // game-world-service
       '/api/character': 'http://localhost:5002',
       '/api/world': 'http://localhost:5002',
+      '/api/realestate': 'http://localhost:5002',
+      '/api/government': 'http://localhost:5002',
+      // simulation-service
+      '/api/news': 'http://localhost:5004',
+      '/api/events': 'http://localhost:5004',
+      '/api/npcs': 'http://localhost:5004',
+      // crime-service
+      '/api/crime': 'http://localhost:5005',
     },
   },
 });

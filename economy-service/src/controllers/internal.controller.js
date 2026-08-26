@@ -4,26 +4,54 @@ const Job = require('../models/Job');
 const MarketItem = require('../models/MarketItem');
 const MarketPrice = require('../models/MarketPrice');
 const EconomyState = require('../models/EconomyState');
+const Inventory = require('../models/Inventory');
+const PaymentProduct = require('../models/PaymentProduct');
+const PaymentTransaction = require('../models/PaymentTransaction');
 const { creditWallet, debitWallet, InsufficientFundsError } = require('../utils/walletService');
+const { debitShards, creditShards, InsufficientShardsError } = require('../utils/shardService');
 const { getIO } = require('../sockets');
+
+// ---------------------------------------------------------------------------
+// GET /api/internal/inventory/:userId/has-weapon — called by crime-service
+// to decide whether to apply its "armed" success-chance bonus. Deliberately
+// tiny and boolean-only: crime-service never learns WHICH weapon a player
+// owns, just whether they own one.
+// ---------------------------------------------------------------------------
+const hasWeapon = async (req, res, next) => {
+  try {
+    const weaponItems = await MarketItem.find({ category: 'weapon' }).select('key');
+    const weaponKeys = weaponItems.map((i) => i.key);
+
+    const inventory = await Inventory.findOne({
+      user: req.params.userId,
+      items: { $elemMatch: { itemKey: { $in: weaponKeys }, quantity: { $gt: 0 } } },
+    });
+
+    return res.json({ success: true, hasWeapon: !!inventory });
+  } catch (err) {
+    next(err);
+  }
+};
 
 // ---------------------------------------------------------------------------
 // GET /api/internal/overview
 // ---------------------------------------------------------------------------
 const getOverview = async (req, res, next) => {
   try {
-    const [state, walletCount, jobCount, itemCount, totalWallets] = await Promise.all([
+    const [state, walletCount, jobCount, itemCount, totalWallets, totalShards] = await Promise.all([
       EconomyState.findById('global'),
       Wallet.countDocuments(),
       Job.countDocuments({ isActive: true }),
       MarketItem.countDocuments({ isActive: true }),
       Wallet.aggregate([{ $group: { _id: null, sum: { $sum: '$balance' } } }]),
+      Wallet.aggregate([{ $group: { _id: null, sum: { $sum: '$chronoShards' } } }]),
     ]);
 
     return res.json({
       success: true,
       overview: {
         totalCoinsInCirculation: totalWallets[0]?.sum || 0,
+        totalChronoShardsInCirculation: totalShards[0]?.sum || 0,
         inflationIndex: state?.inflationIndex ?? 1.0,
         totalWallets: walletCount,
         activeJobs: jobCount,
@@ -247,12 +275,128 @@ const adjustPrice = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// GET /api/internal/payment-products — the full catalog, active + inactive,
+// for the admin Chrono Store page. Mirrors listMarketItemsAdmin above.
+// ---------------------------------------------------------------------------
+const listPaymentProductsAdmin = async (req, res, next) => {
+  try {
+    const products = await PaymentProduct.find().sort({ sortOrder: 1, createdAt: -1 });
+    return res.json({ success: true, products });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/internal/payment-products — create or edit a Chrono Store
+// bundle. Mirrors upsertMarketItem above (findOneAndUpdate by key, upsert).
+// This is the ONLY way to add/edit products now besides re-running
+// seed/seedPaymentProducts.js — that seed script remains useful for a fresh
+// environment, this endpoint is for live tuning without a redeploy.
+// ---------------------------------------------------------------------------
+const upsertPaymentProduct = async (req, res, next) => {
+  try {
+    const product = await PaymentProduct.findOneAndUpdate(
+      { key: req.body.key },
+      { $set: req.body },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    return res.json({ success: true, message: 'Product saved', product });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/internal/payment-transactions?page=1&limit=25&status=&userId=
+// Every sandbox purchase attempt, success or failure, across every player —
+// the admin equivalent of a payment gateway's transactions dashboard. Kept
+// separate from the player-scoped GET /api/payments/history (payments.
+// controller.js), which only ever shows a player their own purchases.
+// ---------------------------------------------------------------------------
+const listPaymentTransactionsAdmin = async (req, res, next) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+    const filter = {};
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.userId) filter.user = req.query.userId;
+
+    const [transactions, total] = await Promise.all([
+      PaymentTransaction.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      PaymentTransaction.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      transactions,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/internal/wallets/:userId/debit-shards  { amount, reason }
+// Same trusted-service pattern as the VC credit/debit above — lets any
+// backend (today: crime-service, to rush a cooldown) spend a player's
+// Chrono Shards without owning the Wallet model itself. Never mints shards
+// this way; only spends existing ones (see utils/shardService.js#debitShards).
+// ---------------------------------------------------------------------------
+const debitShardsInternal = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { amount, reason } = req.body;
+
+    let wallet;
+    try {
+      wallet = await debitShards(userId, amount, { type: 'SPEEDUP', description: reason, meta: { crossService: true } });
+    } catch (e) {
+      if (e instanceof InsufficientShardsError) {
+        return res.status(400).json({ success: false, message: 'User has insufficient Chrono Shards for this debit' });
+      }
+      throw e;
+    }
+
+    getIO()?.to(`user:${userId}`).emit('wallet:update', { chronoShards: wallet.chronoShards });
+
+    return res.json({ success: true, message: 'Chrono Shards debited', chronoShards: wallet.chronoShards });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/internal/wallets/:userId/credit-shards  { amount, reason }
+// Mirrors debitShardsInternal above — lets a trusted backend (crime-service,
+// for its own small "you found a shard" bonus on a successful crime) mint a
+// small amount of Chrono Shards, same way ADMIN_CREDIT does for VC.
+// ---------------------------------------------------------------------------
+const creditShardsInternal = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { amount, reason } = req.body;
+
+    const wallet = await creditShards(userId, amount, { type: 'EARNED', description: reason, meta: { crossService: true } });
+
+    getIO()?.to(`user:${userId}`).emit('wallet:update', { chronoShards: wallet.chronoShards });
+
+    return res.json({ success: true, message: 'Chrono Shards credited', chronoShards: wallet.chronoShards });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getOverview,
   listWallets,
   getWalletByUserId,
   adminCreditWallet,
   adminDebitWallet,
+  debitShardsInternal,
+  creditShardsInternal,
   lockWallet: setWalletLock(true),
   unlockWallet: setWalletLock(false),
   listJobsAdmin,
@@ -260,4 +404,8 @@ module.exports = {
   listMarketItemsAdmin,
   upsertMarketItem,
   adjustPrice,
+  listPaymentProductsAdmin,
+  upsertPaymentProduct,
+  listPaymentTransactionsAdmin,
+  hasWeapon,
 };

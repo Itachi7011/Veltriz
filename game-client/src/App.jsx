@@ -16,8 +16,9 @@ import VerifyEmail from './pages/auth/VerifyEmail';
 import OAuthSuccess from './pages/auth/OAuthSuccess';
 import CharacterCreate from './pages/character/CharacterCreate';
 
-// Phaser is a large dependency — only load it when the player actually
-// enters the game, not on the login/signup screens.
+// The Three.js game engine + cannon-es physics are large dependencies —
+// only load them when the player actually enters the game, not on the
+// login/signup screens.
 const GamePage = lazy(() => import('./pages/game/GamePage'));
 
 import './styles/global.css';

@@ -15,6 +15,9 @@ const emptyItem = {
   sellRateMultiplier: 0.85,
   icon: 'package',
   isActive: true,
+  consumable: false,
+  effectEnergy: 0,
+  effectHappiness: 0,
 };
 
 const MarketItems = () => {
@@ -94,7 +97,8 @@ const MarketItems = () => {
             <Store size={22} /> Market Items
           </h1>
           <p className="veltriz-adminpage-subtitle">
-            Set base prices/volatility, or use <strong>Override price</strong> for instant, real-time control.
+            Set base prices/volatility, mark items consumable with stat effects, or use{' '}
+            <strong>Override price</strong> for instant, real-time control.
           </p>
         </div>
         <button className="veltriz-adminpage-btn primary" onClick={() => setEditing({ ...emptyItem })}>
@@ -126,6 +130,15 @@ const MarketItems = () => {
               <option value="commodity">Commodity</option>
               <option value="tool">Tool</option>
               <option value="luxury">Luxury</option>
+              <option value="food">Food</option>
+              <option value="electronics">Electronics</option>
+              <option value="clothing">Clothing</option>
+              <option value="medicine">Medicine</option>
+              <option value="stock">Stock</option>
+              <option value="weapon">Weapon</option>
+              <option value="seafood">Seafood</option>
+              <option value="crude_oil">Crude Oil</option>
+              <option value="pearls">Pearls</option>
             </select>
           </div>
           <div className="veltriz-adminpage-form-row">
@@ -153,6 +166,37 @@ const MarketItems = () => {
               onChange={(e) => setEditing((i) => ({ ...i, sellRateMultiplier: Number(e.target.value) }))}
             />
           </div>
+
+          <h4 style={{ marginBottom: 8, fontSize: '0.85rem', color: 'var(--vza-text-secondary)' }}>
+            Consumable effects (food/clothing/medicine — restores or spends energy/happiness on use)
+          </h4>
+          <div className="veltriz-adminpage-form-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
+              <input
+                type="checkbox"
+                checked={editing.consumable}
+                onChange={(e) => setEditing((i) => ({ ...i, consumable: e.target.checked }))}
+              />
+              Consumable (players can "Use" it)
+            </label>
+            <input
+              className="veltriz-adminpage-input"
+              type="number"
+              placeholder="Energy effect (can be negative)"
+              value={editing.effectEnergy}
+              onChange={(e) => setEditing((i) => ({ ...i, effectEnergy: Number(e.target.value) }))}
+              disabled={!editing.consumable}
+            />
+            <input
+              className="veltriz-adminpage-input"
+              type="number"
+              placeholder="Happiness effect (can be negative)"
+              value={editing.effectHappiness}
+              onChange={(e) => setEditing((i) => ({ ...i, effectHappiness: Number(e.target.value) }))}
+              disabled={!editing.consumable}
+            />
+          </div>
+
           <div className="veltriz-adminpage-form-row">
             <button className="veltriz-adminpage-btn primary" disabled={saving} onClick={save}>
               <Save size={14} /> Save item
@@ -173,7 +217,7 @@ const MarketItems = () => {
                 <th>Category</th>
                 <th>Base price</th>
                 <th>Live price</th>
-                <th>Volatility</th>
+                <th>Consumable</th>
                 <th></th>
               </tr>
             </thead>
@@ -189,12 +233,22 @@ const MarketItems = () => {
                     <td style={{ textTransform: 'capitalize' }}>{item.category}</td>
                     <td>{item.basePrice} VC</td>
                     <td style={{ fontWeight: 700 }}>{Math.round(item.currentPrice)} VC</td>
-                    <td>{item.volatilityPercent}%</td>
+                    <td>
+                      {item.consumable ? (
+                        <span className="veltriz-adminpage-badge active">
+                          E{item.effectEnergy >= 0 ? '+' : ''}
+                          {item.effectEnergy} / H{item.effectHappiness >= 0 ? '+' : ''}
+                          {item.effectHappiness}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td style={{ display: 'flex', gap: 8 }}>
                       <button className="veltriz-adminpage-btn primary" onClick={() => overridePrice(item)}>
                         <Zap size={14} /> Override price
                       </button>
-                      <button className="veltriz-adminpage-btn" onClick={() => setEditing({ ...item })}>
+                      <button className="veltriz-adminpage-btn" onClick={() => setEditing({ ...emptyItem, ...item })}>
                         Edit
                       </button>
                     </td>

@@ -10,9 +10,30 @@ this service never touches the `User` collection).
 ```bash
 npm install
 cp .env.example .env   # fill in values — JWT_SECRET MUST match auth-service exactly
-npm run seed            # creates the Phase 1 jobs + market items
+npm run seed            # creates the jobs + market items (safe to re-run — idempotent upsert by key)
 npm run dev
 ```
+
+## Casino, School, and Stock Exchange
+
+Three self-contained additions, all living in this service because each one
+only ever needs the wallet this service already owns — no cross-service
+calls required for any of them:
+
+- **Casino** (`/api/casino`) — a coin-flip wager (`POST /bet { amount }`).
+  Debits then (on a win) credits the same wallet in one request. Virtual VC
+  only, purely a game mechanic (see `CASINO_*` env vars for tuning).
+- **School** (`/api/school`) — `POST /study` pays tuition and permanently
+  raises `PlayerSkill.skillLevel` (capped at 5), which
+  `jobs.controller.js#workShift` reads on every shift to boost salary by
+  `SALARY_BONUS_PER_LEVEL` (5%) per level. This is the one place a "stat"
+  from one system (School) directly changes the payout of another (Jobs).
+- **Stock Exchange** — not a separate route at all. "Stock" is just another
+  `MarketItem.category`, traded through the exact same `/api/market`
+  buy/sell endpoints and the exact same price engine as commodities — see
+  the seed file for how volatility/spread are tuned differently to make it
+  feel like a faster-moving market than the commodity one.
+
 
 ## How auth works here
 

@@ -66,6 +66,41 @@ const debitWallet = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /api/economy/wallets/:userId/credit-shards  |  /debit-shards
+// ---------------------------------------------------------------------------
+const creditWalletShards = async (req, res, next) => {
+  try {
+    const { data } = await economyClient.post(`/api/internal/wallets/${req.params.userId}/credit-shards`, req.body);
+    await log({
+      admin: req.admin.id,
+      logType: 'admin_audit',
+      action: 'WALLET_CREDIT_SHARDS',
+      ip: req.ip,
+      meta: { targetUser: req.params.userId, ...req.body },
+    });
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const debitWalletShards = async (req, res, next) => {
+  try {
+    const { data } = await economyClient.post(`/api/internal/wallets/${req.params.userId}/debit-shards`, req.body);
+    await log({
+      admin: req.admin.id,
+      logType: 'admin_audit',
+      action: 'WALLET_DEBIT_SHARDS',
+      ip: req.ip,
+      meta: { targetUser: req.params.userId, ...req.body },
+    });
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/economy/wallets/:userId/lock  |  /unlock
 // ---------------------------------------------------------------------------
 const lockWallet = async (req, res, next) => {
@@ -142,11 +177,48 @@ const adjustPrice = async (req, res, next) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// GET/POST /api/economy/payment-products — the Chrono Store catalog
+// ---------------------------------------------------------------------------
+const listPaymentProducts = async (req, res, next) => {
+  try {
+    const { data } = await economyClient.get('/api/internal/payment-products');
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const upsertPaymentProduct = async (req, res, next) => {
+  try {
+    const { data } = await economyClient.post('/api/internal/payment-products', req.body);
+    await log({ admin: req.admin.id, logType: 'admin_audit', action: 'PAYMENT_PRODUCT_SAVED', ip: req.ip, meta: req.body });
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/economy/payment-transactions?page=&limit=&status=&userId=
+// Read-only — no admin_audit log needed, viewing a list isn't a mutation.
+// ---------------------------------------------------------------------------
+const listPaymentTransactions = async (req, res, next) => {
+  try {
+    const { data } = await economyClient.get('/api/internal/payment-transactions', { params: req.query });
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getOverview,
   listWallets,
   creditWallet,
   debitWallet,
+  creditWalletShards,
+  debitWalletShards,
   lockWallet,
   unlockWallet,
   listJobs,
@@ -154,4 +226,7 @@ module.exports = {
   listMarketItems,
   upsertMarketItem,
   adjustPrice,
+  listPaymentProducts,
+  upsertPaymentProduct,
+  listPaymentTransactions,
 };

@@ -76,8 +76,9 @@ news copy each type generates.
 
 ## Not built in this phase (being upfront)
 
-Politics, crime, war, and the full media/sentiment/propaganda systems from
-the original design doc are still not built — this phase only adds the AI
+Politics, war, and the full media/sentiment/propaganda systems from the
+original design doc are still not built — crime *is* built (see
+`crime-service`), just not by this service. This phase only adds the AI
 population + events + news layer on top of the existing economy. Each of
-those remaining systems needs its own state machine and is a substantial
+the remaining systems needs its own state machine and is a substantial
 task in its own right, better scoped as its own phase than rushed in here.

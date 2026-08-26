@@ -5,6 +5,78 @@ https://img.shields.io/badge/Stack-MERN-blue
 
     A persistent, real-time civilization simulation where every action shapes history.
 
+## ⚙️ Current Implementation Status (engineering-accurate)
+
+The section below this one is the original product vision/pitch document — it
+describes features (politics, media, AI population, Redis/BullMQ, Three.js)
+that are **not built yet**. What's actually implemented today, as plain
+Node/Express + MongoDB + React, no Redis/BullMQ/TypeScript/Three.js:
+
+| Service | Port | Owns |
+|---|---|---|
+| `auth-service` | 5000 | Accounts, login, JWT issuance |
+| `economy-service` | 5001 | Wallet, jobs (incl. School's salary bonus), market/stocks, Casino |
+| `game-world-service` | 5002 | Character identity, the map (buildings + houses), live position sync, Park/Gym/Cinema actions, Real Estate |
+| `admin-service` | 5003 | Admin-only BFF — proxies every other service for `admin-client` |
+| `simulation-service` | 5004 | Generated news, world events, NPC population (NPCs work/spend across every job & market category that exists — see its README) |
+| `crime-service` | 5005 | Risk-reward crime actions, player heat, Police Station fine payoff |
+| `game-client` | 5173 (dev) | The player-facing game (React + Phaser) |
+| `admin-client` | 5174 (dev) | The admin dashboard (React) |
+
+Every backend service shares one MongoDB cluster (separate collections, no
+cross-service `ref`s) and a shared `JWT_SECRET` (player auth) +
+`INTERNAL_API_KEY` (service-to-service calls). Each service has its own
+`.env.example` — copy to `.env` and fill in real secrets before running.
+After first setup, run each service's `npm run seed` (auth-service and
+admin-service have none) — order doesn't matter except economy-service's
+job/market seed should run before simulation-service's NPC seed, so NPCs
+have the full job/item list to be assigned from.
+
+**Playable today — a three-zone city, 75 interactive locations, 346
+non-interactive houses:**
+- **Old Meridian** (the original district, x: 0-4800) — 30 locations: Job
+  Center, Market, Bank, Hospital, Restaurant, Gym, Cinema, Casino,
+  Electronics/Boutique/Jeweler/Hardware Store/Trading Post, Stock Exchange,
+  School, Real Estate, City Hall, Police Station, Courthouse, Credit Union,
+  Insurance Office, Lottery, Embassy, University, Logistics Hub, Government
+  Complex, Factory, Park, plus 40 traditional-style house templates
+- **Neo Meridian** (the modern district, x: 5200-14000, almost 2x Old
+  Meridian's area) — directly connected, no loading screen: keep walking
+  east past x=4800 and the ground tint shifts. 30 more locations — 28 of
+  them reuse an Old Meridian building type under a new name/skin (Neo Bank,
+  Sky Lounge, VR Arcade, MedTech Clinic, etc. — same mechanic, same panel,
+  different building), plus 2 genuinely new career tracks: **Tech Campus**
+  (Data Analyst → Product Manager → Tech Director) and **Quantum Labs**
+  (Lab Assistant → Research Scientist). 60 modern-style house templates,
+  from studio flats up to skyscraper-sized penthouses/estates.
+- **Dustridge County** (the rural district, x: 14400-27600, 3x Neo
+  Meridian's area) — also directly connected, also no loading screen. Only
+  15 buildings and 50 houses across this whole huge footprint — vast open
+  farmland with fence/crop-row scenery, "less houses" by deliberate design
+  (a much coarser placement grid, not just a smaller catalog). 13 of its 15
+  buildings reuse an existing type under a rural name (General Store is
+  `market`, Sheriff's Office is `police_station`, Rusty Spur Saloon is
+  `casino`, etc.); **Farm** (a 3rd new career track: Farmhand → Farm
+  Foreman → Ranch Owner) and **Gun Store** (a new `weapon` market category)
+  are the two genuinely new pieces. Owning any weapon gives a real bonus to
+  crime success chance — "more violence" reaching an actual mechanic, not
+  just flavor text. 15 small, cheap, old-style house templates.
+- **Systems that work across the whole city, not per-zone**: the wallet,
+  crime heat, City Hall's elections/tax policy, School's skill bonus, and
+  every job/market category — a resident of any zone shares one wallet, one
+  criminal record, one Mayor. Only Real Estate ownership and house geometry
+  are zone-specific (you can only own one house at a time, in any zone).
+- NPC population scaled up to match (140 by default, was 60) since the
+  city's location count and footprint have both grown substantially.
+
+NPCs are a real backend economic simulation (they work jobs and buy/sell
+market items, moving prices and employment stats) across every job and
+item category above — not visible sprites walking the map. See
+`simulation-service/README.md` for how that engine works.
+Everything below "Core Features" is the long-term vision, not current state.
+
+---
+
 🎯 What is Veltriz?
 
 Veltriz is a real-time, persistent, AI-driven civilization simulation platform where users live as digital citizens inside a continuously evolving society. It combines identity systems, economic simulation, political governance, crime dynamics, media influence, and an AI population into a single interconnected world.

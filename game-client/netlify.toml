@@ -1,36 +1,113 @@
+# NOTE on splat pattern: every rule below uses "/api/prefix*" (NO slash
+# before the "*") rather than "/api/prefix/*". This matters — Netlify's
+# splat requires a literal "/" to already be in the request path before it
+# will match anything, so "/api/jobs/*" would silently NOT match a bare
+# request to exactly "/api/jobs" (no trailing slash/segment), even though
+# that's a real call this app makes (see JobPanel.jsx, MarketPanel.jsx,
+# CharacterCreate.jsx). Vite's dev proxy doesn't have this gotcha (it
+# matches by simple prefix), which is why this only breaks in production
+# and is easy to miss in local testing. "/api/jobs*" (no slash) correctly
+# matches both "/api/jobs" and "/api/jobs/apply".
+
 [[redirects]]
-  from = "/api/auth/*"
-  to = "https://veltriz-auth-service.onrender.com/api/auth/:splat"
+  from = "/api/auth*"
+  to = "https://veltriz-auth-service.onrender.com/api/auth:splat"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/api/wallet/*"
-  to = "https://veltriz-economy-service.onrender.com/api/wallet/:splat"
+  from = "/api/wallet*"
+  to = "https://veltriz-economy-service.onrender.com/api/wallet:splat"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/api/jobs/*"
-  to = "https://veltriz-economy-service.onrender.com/api/jobs/:splat"
+  from = "/api/jobs*"
+  to = "https://veltriz-economy-service.onrender.com/api/jobs:splat"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/api/market/*"
-  to = "https://veltriz-economy-service.onrender.com/api/market/:splat"
+  from = "/api/market*"
+  to = "https://veltriz-economy-service.onrender.com/api/market:splat"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/api/character/*"
-  to = "https://veltriz-game-world-service.onrender.com/api/character/:splat"
+  from = "/api/casino*"
+  to = "https://veltriz-economy-service.onrender.com/api/casino:splat"
   status = 200
   force = true
 
 [[redirects]]
-  from = "/api/world/*"
-  to = "https://veltriz-game-world-service.onrender.com/api/world/:splat"
+  from = "/api/school*"
+  to = "https://veltriz-economy-service.onrender.com/api/school:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/creditunion*"
+  to = "https://veltriz-economy-service.onrender.com/api/creditunion:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/insurance*"
+  to = "https://veltriz-economy-service.onrender.com/api/insurance:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/lottery*"
+  to = "https://veltriz-economy-service.onrender.com/api/lottery:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/character*"
+  to = "https://veltriz-game-world-service.onrender.com/api/character:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/world*"
+  to = "https://veltriz-game-world-service.onrender.com/api/world:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/realestate*"
+  to = "https://veltriz-game-world-service.onrender.com/api/realestate:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/government*"
+  to = "https://veltriz-game-world-service.onrender.com/api/government:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/news*"
+  to = "https://veltriz-simulation-service.onrender.com/api/news:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/events*"
+  to = "https://veltriz-simulation-service.onrender.com/api/events:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/npcs*"
+  to = "https://veltriz-simulation-service.onrender.com/api/npcs:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/crime*"
+  to = "https://veltriz-crime-service.onrender.com/api/crime:splat"
   status = 200
   force = true
 

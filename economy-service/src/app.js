@@ -9,6 +9,12 @@ const xss = require('xss-clean');
 const walletRoutes = require('./routes/wallet.routes');
 const jobsRoutes = require('./routes/jobs.routes');
 const marketRoutes = require('./routes/market.routes');
+const casinoRoutes = require('./routes/casino.routes');
+const schoolRoutes = require('./routes/school.routes');
+const creditunionRoutes = require('./routes/creditunion.routes');
+const insuranceRoutes = require('./routes/insurance.routes');
+const lotteryRoutes = require('./routes/lottery.routes');
+const paymentsRoutes = require('./routes/payments.routes');
 const internalRoutes = require('./routes/internal.routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
@@ -49,6 +55,12 @@ app.get('/health', (req, res) => res.json({ success: true, service: 'economy-ser
 app.use('/api/wallet', walletRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/market', marketRoutes);
+app.use('/api/casino', casinoRoutes);
+app.use('/api/school', schoolRoutes);
+app.use('/api/creditunion', creditunionRoutes);
+app.use('/api/insurance', insuranceRoutes);
+app.use('/api/lottery', lotteryRoutes);
+app.use('/api/payments', paymentsRoutes);
 app.use('/api/internal', internalRoutes);
 
 app.use(notFound);

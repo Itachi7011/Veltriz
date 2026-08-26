@@ -10,5 +10,6 @@ const { initWalletSchema } = require('../validators/economy.validators');
 router.post('/init', protect, actionLimiter, validate(initWalletSchema), ctrl.initWallet);
 router.get('/me', protect, ctrl.getMyWallet);
 router.get('/transactions', protect, ctrl.getTransactions);
+router.get('/shard-transactions', protect, ctrl.getShardTransactions);
 
 module.exports = router;

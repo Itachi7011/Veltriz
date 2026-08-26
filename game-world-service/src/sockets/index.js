@@ -44,7 +44,7 @@ const initSockets = (httpServer) => {
     const saveIntervalMs = parseInt(process.env.POSITION_SAVE_INTERVAL_MS, 10) || 5000;
 
     // ---- Join a map's shared room ----
-    socket.on('world:join', async ({ mapId, displayName, x, y }) => {
+    socket.on('world:join', async ({ mapId, displayName, x, y, appearance, gender }) => {
       try {
         socket.mapId = mapId;
         socket.join(`map:${mapId}`);
@@ -57,6 +57,11 @@ const initSockets = (httpServer) => {
           y,
           facing: 'down',
           mapId,
+          // Passed through as-is so every client can render this player's
+          // actual 3D appearance instead of a generic stand-in — additive
+          // only, existing fields (userId/displayName/x/y/facing) unchanged.
+          appearance: appearance || null,
+          gender: gender || 'male',
         };
 
         // Send the new player everyone ALREADY on the map

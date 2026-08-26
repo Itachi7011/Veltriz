@@ -5,6 +5,8 @@ import Swal from 'sweetalert2';
 import { ThemeContext } from '../../context/ThemeContext';
 import { useCharacter } from '../../context/CharacterContext';
 import http from '../../lib/httpClient';
+import CharacterPreview3D from './CharacterPreview3D';
+import { SKIN_TONES, OUTFIT_COLORS, HAIR_COLORS, HAIR_STYLES } from '../game/engine/CharacterModel';
 import './CharacterCreate.css';
 
 const BACKGROUNDS = [
@@ -28,9 +30,13 @@ const BACKGROUNDS = [
   },
 ];
 
-const SKIN_TONES = ['#f1c39a', '#e0ac69', '#c68863', '#8d5524', '#5a3825'];
-const OUTFIT_COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4'];
-const HAIR_COLORS = ['#2b2b2b', '#5a3825', '#7a4a1e', '#c9c9c9', '#8b1e1e'];
+const HAIR_STYLE_LABELS = {
+  short: 'Short',
+  buzz: 'Buzz cut',
+  long: 'Long',
+  ponytail: 'Ponytail',
+  bald: 'Bald',
+};
 
 const CharacterCreate = () => {
   const { isDarkMode, toggleDarkMode } = useContext(ThemeContext);
@@ -51,9 +57,11 @@ const CharacterCreate = () => {
   const [city, setCity] = useState('');
   const [background, setBackground] = useState('poor');
   const [appearance, setAppearance] = useState({
+    gender: 'male',
     skinTone: SKIN_TONES[0],
     outfitColor: OUTFIT_COLORS[0],
     hairColor: HAIR_COLORS[0],
+    hairStyle: 'short',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -192,65 +200,98 @@ const CharacterCreate = () => {
 
           <div className="veltriz-charcreate-field">
             <label className="veltriz-charcreate-label">Appearance</label>
-            <div className="veltriz-charcreate-appearance-grid">
-              <div>
-                <span className="veltriz-charcreate-swatch-label">Skin tone</span>
-                <div className="veltriz-charcreate-swatch-row">
-                  {SKIN_TONES.map((color) => (
-                    <button
-                      type="button"
-                      key={color}
-                      className={`veltriz-charcreate-swatch ${appearance.skinTone === color ? 'selected' : ''}`}
-                      style={{ background: color }}
-                      onClick={() => setAppearance((a) => ({ ...a, skinTone: color }))}
-                      aria-label={`Skin tone ${color}`}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="veltriz-charcreate-swatch-label">Outfit color</span>
-                <div className="veltriz-charcreate-swatch-row">
-                  {OUTFIT_COLORS.map((color) => (
-                    <button
-                      type="button"
-                      key={color}
-                      className={`veltriz-charcreate-swatch ${appearance.outfitColor === color ? 'selected' : ''}`}
-                      style={{ background: color }}
-                      onClick={() => setAppearance((a) => ({ ...a, outfitColor: color }))}
-                      aria-label={`Outfit color ${color}`}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="veltriz-charcreate-swatch-label">Hair color</span>
-                <div className="veltriz-charcreate-swatch-row">
-                  {HAIR_COLORS.map((color) => (
-                    <button
-                      type="button"
-                      key={color}
-                      className={`veltriz-charcreate-swatch ${appearance.hairColor === color ? 'selected' : ''}`}
-                      style={{ background: color }}
-                      onClick={() => setAppearance((a) => ({ ...a, hairColor: color }))}
-                      aria-label={`Hair color ${color}`}
-                    />
-                  ))}
-                </div>
+            <div className="veltriz-charcreate-appearance-layout">
+              <div className="veltriz-charcreate-preview">
+                <CharacterPreview3D appearance={appearance} />
+                <span className="veltriz-charcreate-swatch-label">Drag not needed — auto-rotates</span>
               </div>
 
-              {/* Live preview of the simple/blurry avatar */}
-              <div className="veltriz-charcreate-preview">
-                <div
-                  className="veltriz-charcreate-preview-avatar"
-                  style={{
-                    background: appearance.skinTone,
-                    boxShadow: `0 0 0 6px ${appearance.outfitColor}`,
-                  }}
-                >
-                  <div className="veltriz-charcreate-preview-hair" style={{ background: appearance.hairColor }} />
+              <div className="veltriz-charcreate-appearance-grid">
+                <div>
+                  <span className="veltriz-charcreate-swatch-label">Gender</span>
+                  <div className="veltriz-charcreate-option-row">
+                    {['male', 'female'].map((g) => (
+                      <button
+                        type="button"
+                        key={g}
+                        className={`veltriz-charcreate-option ${appearance.gender === g ? 'selected' : ''}`}
+                        onClick={() =>
+                          setAppearance((a) => ({
+                            ...a,
+                            gender: g,
+                            hairStyle: a.hairStyle === 'short' && g === 'female' ? 'long' : a.hairStyle,
+                          }))
+                        }
+                      >
+                        {g === 'male' ? 'Male' : 'Female'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <span className="veltriz-charcreate-swatch-label">Preview</span>
+
+                <div>
+                  <span className="veltriz-charcreate-swatch-label">Skin tone</span>
+                  <div className="veltriz-charcreate-swatch-row">
+                    {SKIN_TONES.map((color) => (
+                      <button
+                        type="button"
+                        key={color}
+                        className={`veltriz-charcreate-swatch ${appearance.skinTone === color ? 'selected' : ''}`}
+                        style={{ background: color }}
+                        onClick={() => setAppearance((a) => ({ ...a, skinTone: color }))}
+                        aria-label={`Skin tone ${color}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="veltriz-charcreate-swatch-label">Hairstyle</span>
+                  <div className="veltriz-charcreate-option-row">
+                    {HAIR_STYLES.map((style) => (
+                      <button
+                        type="button"
+                        key={style}
+                        className={`veltriz-charcreate-option ${appearance.hairStyle === style ? 'selected' : ''}`}
+                        onClick={() => setAppearance((a) => ({ ...a, hairStyle: style }))}
+                      >
+                        {HAIR_STYLE_LABELS[style]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="veltriz-charcreate-swatch-label">Hair color</span>
+                  <div className="veltriz-charcreate-swatch-row">
+                    {HAIR_COLORS.map((color) => (
+                      <button
+                        type="button"
+                        key={color}
+                        className={`veltriz-charcreate-swatch ${appearance.hairColor === color ? 'selected' : ''}`}
+                        style={{ background: color }}
+                        onClick={() => setAppearance((a) => ({ ...a, hairColor: color }))}
+                        aria-label={`Hair color ${color}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="veltriz-charcreate-swatch-label">Outfit color</span>
+                  <div className="veltriz-charcreate-swatch-row">
+                    {OUTFIT_COLORS.map((color) => (
+                      <button
+                        type="button"
+                        key={color}
+                        className={`veltriz-charcreate-swatch ${appearance.outfitColor === color ? 'selected' : ''}`}
+                        style={{ background: color }}
+                        onClick={() => setAppearance((a) => ({ ...a, outfitColor: color }))}
+                        aria-label={`Outfit color ${color}`}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -31,6 +31,7 @@ export const SocketProvider = ({ children }) => {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [latestBalance, setLatestBalance] = useState(null);
+  const [latestChronoShards, setLatestChronoShards] = useState(null);
   const [latestPrices, setLatestPrices] = useState({}); // { [itemKey]: currentPrice }
 
   useEffect(() => {
@@ -51,7 +52,16 @@ export const SocketProvider = ({ children }) => {
 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
-    socket.on('wallet:update', ({ balance }) => setLatestBalance(balance));
+    socket.on('wallet:update', ({ balance, chronoShards }) => {
+      // Some emitters (VC credit/debit) only send balance; others (Chrono
+      // Shard credit/debit — see economy-service's internal.controller.js
+      // and jobs.controller.js's rush endpoint) only send chronoShards.
+      // Only update the field that was actually included, or a shard-only
+      // event would wipe the displayed VC balance back to undefined (and
+      // vice versa).
+      if (balance !== undefined) setLatestBalance(balance);
+      if (chronoShards !== undefined) setLatestChronoShards(chronoShards);
+    });
     socket.on('market:price_update', ({ itemKey, currentPrice }) => {
       setLatestPrices((prev) => ({ ...prev, [itemKey]: currentPrice }));
     });
@@ -75,7 +85,7 @@ export const SocketProvider = ({ children }) => {
   }, []);
 
   return (
-    <SocketContext.Provider value={{ connected, latestBalance, latestPrices, socket: socketRef }}>
+    <SocketContext.Provider value={{ connected, latestBalance, latestChronoShards, latestPrices, socket: socketRef }}>
       {children}
     </SocketContext.Provider>
   );

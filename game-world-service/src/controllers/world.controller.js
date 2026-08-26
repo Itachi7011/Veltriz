@@ -1,4 +1,5 @@
 const { COUNTRIES, MAPS } = require('../data/worldData');
+const { getGameClock } = require('../services/gameClock');
 
 // ---------------------------------------------------------------------------
 // GET /api/world/countries
@@ -16,4 +17,12 @@ const getMapConfig = (req, res) => {
   return res.json({ success: true, map });
 };
 
-module.exports = { getCountries, getMapConfig };
+// ---------------------------------------------------------------------------
+// GET /api/world/clock — the shared, stateless in-game calendar. See
+// services/gameClock.js for why this is math, not a stored/ticked value.
+// ---------------------------------------------------------------------------
+const getClock = (req, res) => {
+  return res.json({ success: true, clock: getGameClock() });
+};
+
+module.exports = { getCountries, getMapConfig, getClock };

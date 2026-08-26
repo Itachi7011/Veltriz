@@ -16,6 +16,25 @@ const TransactionSchema = new mongoose.Schema(
         'ADMIN_DEBIT',
         'TAX',
         'STARTING_BALANCE',
+        // These 8 were already being passed by casino/credit-union/lottery/
+        // school controllers before this fix but were MISSING from this
+        // enum — every one of those calls was throwing a Mongoose
+        // ValidationError and failing outright. Found during the robustness
+        // audit; see EXPANSION_NOTES.md.
+        'CASINO_BET',
+        'CASINO_WIN',
+        'INSURANCE_PREMIUM',
+        'LOAN_DISBURSEMENT',
+        'LOAN_REPAYMENT',
+        'LOTTERY_TICKET',
+        'LOTTERY_WIN',
+        'TUITION',
+        // New with the time-management/Chrono Shard system — see
+        // models/Wallet.js's chronoShards field and controllers/
+        // payments.controller.js / jobs.controller.js's rush-shift flow.
+        'SHARD_PURCHASE',
+        'SHARD_EARNED',
+        'SHARD_SPEEDUP',
       ],
       required: true,
     },

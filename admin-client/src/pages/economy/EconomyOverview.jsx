@@ -46,6 +46,11 @@ const EconomyOverview = () => {
             label="Total coins in circulation"
             value={overview ? Math.round(overview.totalCoinsInCirculation).toLocaleString() : '—'}
           />
+          <StatCard
+            icon={Coins}
+            label="Total Chrono Shards in circulation"
+            value={overview ? Math.round(overview.totalChronoShardsInCirculation).toLocaleString() : '—'}
+          />
           <StatCard icon={TrendingUp} label="Inflation index" value={overview ? overview.inflationIndex.toFixed(2) : '—'} />
           <StatCard icon={Briefcase} label="Active jobs" value={overview?.activeJobs ?? '—'} />
           <StatCard icon={Store} label="Active market items" value={overview?.activeMarketItems ?? '—'} />

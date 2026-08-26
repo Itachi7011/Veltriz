@@ -1,5 +1,6 @@
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
+const ShardTransaction = require('../models/ShardTransaction');
 const { creditWallet } = require('../utils/walletService');
 
 const STARTING_BALANCES = {
@@ -76,4 +77,32 @@ const getTransactions = async (req, res, next) => {
   }
 };
 
-module.exports = { initWallet, getMyWallet, getTransactions };
+// ---------------------------------------------------------------------------
+// GET /api/wallet/shard-transactions?page=1&limit=20 — same shape as
+// /transactions above, just reading ShardTransaction instead of Transaction
+// (see ShardTransaction.js for why Chrono Shards get their own ledger).
+// ---------------------------------------------------------------------------
+const getShardTransactions = async (req, res, next) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+
+    const [transactions, total] = await Promise.all([
+      ShardTransaction.find({ user: req.user.id })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      ShardTransaction.countDocuments({ user: req.user.id }),
+    ]);
+
+    return res.json({
+      success: true,
+      transactions,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { initWallet, getMyWallet, getTransactions, getShardTransactions };

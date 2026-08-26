@@ -10,9 +10,6 @@ const protect = (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
-    console.log("token is : ", token)
-    console.log("decoded is : ", decoded)
-
     req.user = { id: decoded.sub, username: decoded.username, role: decoded.role };
     req.rawToken = token; // kept so controllers can forward it to economy-service
     next();

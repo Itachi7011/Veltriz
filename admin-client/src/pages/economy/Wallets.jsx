@@ -56,6 +56,7 @@ const Wallets = () => {
               <tr>
                 <th>User ID</th>
                 <th>Balance</th>
+                <th>Chrono Shards</th>
                 <th>Background</th>
                 <th>Status</th>
                 <th></th>
@@ -64,11 +65,11 @@ const Wallets = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={5}>Loading…</td>
+                  <td colSpan={6}>Loading…</td>
                 </tr>
               ) : data.wallets.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="veltriz-adminpage-empty">
+                  <td colSpan={6} className="veltriz-adminpage-empty">
                     No wallets yet.
                   </td>
                 </tr>
@@ -79,6 +80,7 @@ const Wallets = () => {
                       <Link to={`/users/${w.user}`}>{w.user}</Link>
                     </td>
                     <td>{w.balance.toLocaleString()} VC</td>
+                    <td style={{ color: '#a78bfa' }}>{(w.chronoShards || 0).toLocaleString()}</td>
                     <td style={{ textTransform: 'capitalize' }}>{w.background}</td>
                     <td>
                       <span className={`veltriz-adminpage-badge ${w.isLocked ? 'banned' : 'active'}`}>

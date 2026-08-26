@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+.env
+.venv
+venv
+/venv
+/.venv
+.next
+backup
+/backup
+*backup
+
+build
+/build

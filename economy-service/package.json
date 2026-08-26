@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "seed": "node src/seed/seedJobsAndMarket.js"
+    "seed": "node src/seed/seedJobsAndMarket.js",
+    "seed:payments": "node src/seed/seedPaymentProducts.js",
+    "seed:payments": "node src/seed/seedPaymentProducts.js"
   },
   "dependencies": {
     "axios": "^1.6.8",
