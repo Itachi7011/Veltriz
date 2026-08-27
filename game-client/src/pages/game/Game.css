@@ -151,6 +151,15 @@
   animation: veltriz-auth-fade-in 200ms ease;
 }
 
+.veltriz-game-interact-prompt-crime {
+  bottom: 106px;
+  border-color: #ef4444;
+}
+
+.veltriz-game-interact-prompt-crime kbd {
+  background: #ef4444 !important;
+}
+
 .veltriz-game-interact-prompt kbd {
   background: #7c3aed;
   padding: 2px 8px;
@@ -181,6 +190,159 @@
   color: #fff;
 }
 
+/* ---- Weapon HUD ---- */
+.veltriz-weapon-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  pointer-events: none;
+}
+
+.veltriz-weapon-crosshair span {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+.veltriz-weapon-crosshair span:nth-child(1) { top: 0; left: 50%; width: 2px; height: 7px; transform: translateX(-50%); }
+.veltriz-weapon-crosshair span:nth-child(2) { bottom: 0; left: 50%; width: 2px; height: 7px; transform: translateX(-50%); }
+.veltriz-weapon-crosshair span:nth-child(3) { left: 0; top: 50%; height: 2px; width: 7px; transform: translateY(-50%); }
+.veltriz-weapon-crosshair span:nth-child(4) { right: 0; top: 50%; height: 2px; width: 7px; transform: translateY(-50%); }
+
+.veltriz-weapon-crosshair.hit span {
+  background: #ef4444;
+}
+
+.veltriz-weapon-hud {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 8;
+  text-align: right;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.veltriz-weapon-hud-name {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.veltriz-weapon-hud-ammo {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.veltriz-weapon-scope {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, transparent 0%, transparent 29%, #000 30%),
+    radial-gradient(circle at center, transparent 0%, transparent 29.3%, #000 29.8%);
+  background-color: #000;
+}
+
+.veltriz-weapon-scope-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+}
+
+.veltriz-weapon-scope-line {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.veltriz-weapon-scope-line.h {
+  top: 0;
+  left: -220px;
+  width: 440px;
+  height: 1.5px;
+}
+
+.veltriz-weapon-scope-line.v {
+  left: 0;
+  top: -220px;
+  height: 440px;
+  width: 1.5px;
+}
+
+/* ---- Crime mini-game ---- */
+.veltriz-crime-minigame {
+  background: rgba(10, 12, 20, 0.55);
+  border: 1px solid #3a2030;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 10px 0 16px;
+  text-align: center;
+}
+
+.veltriz-crime-minigame-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+.veltriz-crime-minigame-hint {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 12px;
+}
+
+.veltriz-crime-minigame-track {
+  position: relative;
+  height: 22px;
+  background: #1a1d2b;
+  border-radius: 999px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid #2b2f52;
+}
+
+.veltriz-crime-minigame-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(34, 197, 94, 0.45);
+  border-left: 2px solid #22c55e;
+  border-right: 2px solid #22c55e;
+}
+
+.veltriz-crime-minigame-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 4px;
+  background: #fff;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+}
+
+.veltriz-crime-minigame-result {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.veltriz-crime-minigame-result.good {
+  color: #4ade80;
+}
+
+.veltriz-crime-minigame-result.bad {
+  color: #f87171;
+}
+
 /* ---- Panels ---- */
 .veltriz-game-panel-backdrop {
   position: absolute;
@@ -208,6 +370,12 @@
 
 .veltriz-game-panel-wide {
   max-width: 560px;
+}
+
+.veltriz-game-fullmap-panel {
+  max-width: min(96vw, 1160px);
+  width: min(96vw, 1160px);
+  max-height: 92vh;
 }
 
 .veltriz-game-panel-header {
@@ -293,6 +461,19 @@
   border: 1px solid #262b47;
   border-radius: 10px;
   padding: 12px 14px;
+}
+
+.veltriz-crime-card-distant {
+  opacity: 0.62;
+}
+
+.veltriz-crime-location-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  color: #93c5fd;
+  margin-top: 4px;
 }
 
 .veltriz-game-job-title {
@@ -587,19 +768,18 @@
   top: 68px;
   right: 16px;
   z-index: 10;
-  border: 1px solid #2b2f52;
-  border-radius: 10px;
-  overflow: hidden;
+  border: none;
+  border-radius: 50%;
+  overflow: visible;
   padding: 0;
   cursor: pointer;
   background: none;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  transition: transform 150ms ease, border-color 150ms ease;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.5));
+  transition: transform 150ms ease;
 }
 
 .veltriz-game-minimap:hover {
   transform: scale(1.03);
-  border-color: #7c3aed;
 }
 
 .veltriz-game-minimap svg {
@@ -608,13 +788,27 @@
 
 .veltriz-game-minimap-hint {
   position: absolute;
-  bottom: 4px;
-  right: 6px;
+  bottom: -2px;
+  right: -2px;
   font-size: 0.65rem;
   color: #dfe3ff;
-  background: rgba(10, 12, 20, 0.6);
+  background: rgba(10, 12, 20, 0.75);
   padding: 1px 5px;
   border-radius: 4px;
+  pointer-events: none;
+}
+
+.veltriz-game-minimap-zone {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(10, 12, 20, 0.6);
+  padding: 2px 8px;
+  border-radius: 6px;
   pointer-events: none;
 }
 
@@ -626,10 +820,41 @@
 }
 
 /* ---- Full map overlay ---- */
+.veltriz-game-fullmap-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.veltriz-game-fullmap-tab {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1.5px solid #2b2f52;
+  background: rgba(255, 255, 255, 0.04);
+  color: #dfe3ff;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.veltriz-game-fullmap-tab:hover {
+  border-color: #7c3aed;
+}
+
+.veltriz-game-fullmap-tab.active {
+  background: rgba(124, 58, 237, 0.25);
+  color: #fff;
+  font-weight: 600;
+}
+
 .veltriz-game-fullmap-svg {
   display: block;
   margin: 0 auto;
   border-radius: 8px;
+  width: 100%;
+  height: auto;
+  max-height: 64vh;
 }
 
 .veltriz-game-fullmap-legend {

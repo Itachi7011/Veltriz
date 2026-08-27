@@ -10,6 +10,13 @@ import * as THREE from 'three';
 
 const canvasCache = new Map();
 
+function shadeColor(hex, amt) {
+  const c = new THREE.Color(hex);
+  if (amt >= 0) c.lerp(new THREE.Color('#ffffff'), amt);
+  else c.lerp(new THREE.Color('#000000'), -amt);
+  return `#${c.getHexString()}`;
+}
+
 function makeSignTexture(text, accent) {
   const key = `${text}__${accent}`;
   if (canvasCache.has(key)) return canvasCache.get(key);
@@ -117,6 +124,26 @@ const TYPE_STYLE = {
 };
 const DEFAULT_STYLE = { floors: 3, wallTint: 0, roof: 'flat', accent: '#7c3aed' };
 
+// Houses use a `houseType` key (not `type`), and there are 100+ distinct
+// keys across the catalogs — too many to hand-list, and previously this
+// meant EVERY house silently fell through to DEFAULT_STYLE (flat roof,
+// purple accent) regardless of whether it was a "tiny_shack" or a
+// "grand_atrium_home". Classify by price/name pattern instead: anything
+// condo/tower/flat/loft/penthouse-shaped gets a flat-roofed multi-storey
+// look, everything else gets a real pitched roof like an actual house.
+function classifyHouse(h) {
+  const key = h.houseType || '';
+  const isTowerLike = /tower|condo|flat|loft|penthouse|apartment|suite|estate|complex|residence|studio|unit/i.test(key);
+  const price = h.price || 0;
+
+  if (isTowerLike && price > 2200) {
+    const floors = Math.max(2, Math.min(9, 2 + Math.floor(price / 3200)));
+    return { roof: 'flat', floors };
+  }
+  const floors = price > 4500 ? 2 : 1;
+  return { roof: 'gable', floors };
+}
+
 function zoneWallColor(zoneKey) {
   const map = {
     old_meridian: '#5b6390',
@@ -168,6 +195,20 @@ function addSkyscraperSetback(group, width, depth, wallHeight, accentColor) {
   );
   spire.position.y = wallHeight + wallHeight * 0.38 + (wallHeight * 0.18) / 2;
   group.add(spire);
+}
+
+function addRoofClutter(group, width, depth, wallHeight) {
+  // A couple of small vent/AC-unit boxes on flat rooftops — a cheap detail
+  // that reads immediately as "real rooftop" instead of a bare plane.
+  const unitMat = new THREE.MeshStandardMaterial({ color: '#8b93a8', roughness: 0.6, metalness: 0.2 });
+  const count = Math.min(3, Math.max(1, Math.round((width * depth) / 60)));
+  for (let i = 0; i < count; i++) {
+    const w = 0.5 + Math.random() * 0.3;
+    const unit = new THREE.Mesh(new THREE.BoxGeometry(w, 0.35, w * 0.8), unitMat);
+    unit.position.set((Math.random() - 0.5) * width * 0.5, wallHeight + 0.42, (Math.random() - 0.5) * depth * 0.5);
+    unit.castShadow = true;
+    group.add(unit);
+  }
 }
 
 function addRoof(group, style, width, depth, wallHeight, accentColor) {
@@ -242,19 +283,15 @@ function addRoof(group, style, width, depth, wallHeight, accentColor) {
  */
 export function buildStructure(b, opts) {
   const { scale, zoneKey, kind = 'building' } = opts;
-  const style = TYPE_STYLE[b.type] || DEFAULT_STYLE;
+  const style = kind === 'house' ? { ...DEFAULT_STYLE, ...classifyHouse(b), accent: b.color || '#7c3aed' } : TYPE_STYLE[b.type] || DEFAULT_STYLE;
 
   const width = Math.max(3, (b.width * scale) * 0.92);
   const depth = Math.max(3, (b.height * scale) * 0.92);
 
-  let floors = style.floors;
-  let baseColor = zoneWallColor(zoneKey);
-  if (kind === 'house') {
-    floors = b.height > 200 ? 2 : 1;
-    baseColor = b.color || '#4a5170';
-  }
+  const floors = style.floors;
+  const baseColor = kind === 'house' ? b.color || '#4a5170' : zoneWallColor(zoneKey);
 
-  const floorHeight = kind === 'house' ? 0.9 : 1.05;
+  const floorHeight = kind === 'house' ? 0.95 : 1.05;
   const wallHeight = floors * floorHeight;
 
   const group = new THREE.Group();
@@ -264,30 +301,41 @@ export function buildStructure(b, opts) {
   const wallColor = new THREE.Color(baseColor);
   if (style.wallTint) wallColor.lerp(new THREE.Color('#ffffff'), Math.max(0, style.wallTint));
 
-  const windowTex = makeWindowTexture(
-    '#20263c',
-    Math.max(2, Math.round(width / (kind === 'house' ? 1.4 : 1.9))),
-    Math.max(1, floors * 2)
-  );
-  windowTex.repeat.set(1, 1);
+  // Windows on the front/back AND both sides now (previously only the
+  // front face had them and the rest were flat, so buildings looked like
+  // a stage-prop facade from any other angle). Each face gets its own
+  // texture instance so the window grid isn't stretched on the narrower
+  // side walls.
+  const winRows = Math.max(1, floors * 2);
+  const frontBackTex = makeWindowTexture('#20263c', Math.max(2, Math.round(width / (kind === 'house' ? 1.4 : 1.9))), winRows);
+  const sideTex = makeWindowTexture('#1c2136', Math.max(2, Math.round(depth / (kind === 'house' ? 1.4 : 1.9))), winRows);
 
-  const sideMat = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.8, metalness: 0.05 });
-  const frontMat = new THREE.MeshStandardMaterial({
-    color: '#ffffff',
-    roughness: 0.6,
-    metalness: 0.1,
-    map: windowTex,
-  });
+  const wallMat = (tex) => new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.65, metalness: 0.08, map: tex });
+  const plainMat = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.85, metalness: 0.03 });
+
+  // BoxGeometry material order: [+X, -X, +Y(top), -Y(bottom), +Z(front), -Z(back)]
+  const materials = [wallMat(sideTex.clone()), wallMat(sideTex.clone()), plainMat, plainMat, wallMat(frontBackTex), wallMat(frontBackTex.clone())];
 
   const geo = new THREE.BoxGeometry(width, wallHeight, depth);
-  const materials = [sideMat, sideMat, sideMat, sideMat, frontMat, sideMat];
   const walls = new THREE.Mesh(geo, materials);
   walls.position.y = wallHeight / 2;
   walls.castShadow = true;
   walls.receiveShadow = true;
   group.add(walls);
 
+  // A slightly wider, darker base plinth so the building looks grounded
+  // instead of a box just resting on top of the pavement.
+  const plinthH = Math.min(0.35, wallHeight * 0.12);
+  const plinth = new THREE.Mesh(
+    new THREE.BoxGeometry(width * 1.03, plinthH, depth * 1.03),
+    new THREE.MeshStandardMaterial({ color: shadeColor(baseColor, -0.35), roughness: 0.9 })
+  );
+  plinth.position.y = plinthH / 2;
+  plinth.receiveShadow = true;
+  group.add(plinth);
+
   addRoof(group, style, width, depth, wallHeight, style.accent);
+  if (style.roof === 'flat' && floors >= 3) addRoofClutter(group, width, depth, wallHeight);
 
   // Civic buildings get a columned portico; very tall towers get a
   // tiered skyscraper crown — both make the type instantly readable at a
@@ -301,14 +349,28 @@ export function buildStructure(b, opts) {
     addSkyscraperSetback(group, width, depth, wallHeight, style.accent);
   }
 
-  // Door
+  // Door + frame + a small threshold step, instead of a flat rectangle
+  // stuck to the wall.
   const doorW = Math.min(width * 0.22, 1.1);
+  const doorH = 1.15;
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(doorW + 0.14, doorH + 0.12, 0.1),
+    new THREE.MeshStandardMaterial({ color: '#efe6d8', roughness: 0.6 })
+  );
+  frame.position.set(0, doorH / 2 + 0.03, depth / 2 + 0.03);
+  group.add(frame);
   const door = new THREE.Mesh(
-    new THREE.BoxGeometry(doorW, 1.15, 0.08),
+    new THREE.BoxGeometry(doorW, doorH, 0.08),
     new THREE.MeshStandardMaterial({ color: '#241a12', roughness: 0.5 })
   );
-  door.position.set(0, 0.58, depth / 2 + 0.02);
+  door.position.set(0, doorH / 2 + 0.06, depth / 2 + 0.06);
   group.add(door);
+  const step = new THREE.Mesh(
+    new THREE.BoxGeometry(doorW + 0.5, 0.1, 0.35),
+    new THREE.MeshStandardMaterial({ color: '#9ca3af', roughness: 0.9 })
+  );
+  step.position.set(0, 0.05, depth / 2 + 0.2);
+  group.add(step);
 
   // Accent awning above door for shops/food/leisure types
   if (['restaurant', 'market', 'boutique', 'electronics', 'jeweler', 'trading_post', 'hardware_store'].includes(b.type)) {

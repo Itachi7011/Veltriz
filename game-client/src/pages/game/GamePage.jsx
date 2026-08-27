@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import Swal from 'sweetalert2';
 import GameEngine from './engine/GameEngine';
 import gameEvents from './gameEvents';
 import { useCharacter } from '../../context/CharacterContext';
@@ -8,6 +9,7 @@ import http from '../../lib/httpClient';
 import { getAccessToken } from '../../utils/tokenStore';
 import { enterFullscreen, exitFullscreen } from '../../utils/fullscreen';
 import GameHUD from './ui/GameHUD';
+import WeaponHUD from './ui/WeaponHUD';
 import NewsTicker from './ui/NewsTicker';
 import MiniMap from './ui/MiniMap';
 import FullMap from './ui/FullMap';
@@ -74,6 +76,7 @@ const GamePage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [nearbyBuilding, setNearbyBuilding] = useState(null); // 'job_center' | 'market' | 'bank' | 'home' | null
+  const [crimeOpportunity, setCrimeOpportunity] = useState(null); // { actionKey, label } | null — set only while physically at a matching crime location
   const [openPanel, setOpenPanel] = useState(null);
   const [mapConfig, setMapConfig] = useState(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
@@ -131,6 +134,28 @@ const GamePage = () => {
     return () => {
       gameEvents.off('building:enter', onEnter);
       gameEvents.off('building:leave', onLeave);
+    };
+  }, []);
+
+  // ---- Crime location proximity (which crime, if any, you're physically
+  // standing at right now) + getting caught by a police NPC mid-chase ----
+  useEffect(() => {
+    const onOpportunity = (opp) => setCrimeOpportunity(opp);
+    const onBusted = () => {
+      setOpenPanel(null);
+      Swal.fire({
+        icon: 'error',
+        title: 'Busted!',
+        text: "An officer caught up with you — better lay low for a bit.",
+        timer: 2600,
+        showConfirmButton: false,
+      });
+    };
+    gameEvents.on('crime:opportunity', onOpportunity);
+    gameEvents.on('crime:busted', onBusted);
+    return () => {
+      gameEvents.off('crime:opportunity', onOpportunity);
+      gameEvents.off('crime:busted', onBusted);
     };
   }, []);
 
@@ -289,18 +314,26 @@ const GamePage = () => {
             </div>
           )}
 
-          {!openPanel && !isPaused && !isMapOpen && (
-            <div className="veltriz-game-camera-hint">
-              <kbd>V</kbd> camera &nbsp;·&nbsp; <kbd>Shift</kbd> run &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; click to look around
+          {crimeOpportunity && !openPanel && !isPaused && !isMapOpen && (
+            <div className="veltriz-game-interact-prompt veltriz-game-interact-prompt-crime">
+              Press <kbd>C</kbd> — you can attempt something here
             </div>
           )}
+
+          {!openPanel && !isPaused && !isMapOpen && (
+            <div className="veltriz-game-camera-hint">
+              <kbd>V</kbd> camera &nbsp;·&nbsp; <kbd>Shift</kbd> run &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>1-6</kbd> weapons &nbsp;·&nbsp; <kbd>R</kbd> reload &nbsp;·&nbsp; click to look/fire
+            </div>
+          )}
+
+          {!openPanel && !isPaused && !isMapOpen && <WeaponHUD />}
 
           {isMapOpen && mapConfig && <FullMap mapConfig={mapConfig} onClose={() => setIsMapOpen(false)} />}
 
           {openPanel === 'job_center' && <JobPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'market' && <MarketPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'bank' && <WalletPanel onClose={() => setOpenPanel(null)} />}
-          {openPanel === 'crime' && <CrimePanel onClose={() => setOpenPanel(null)} />}
+          {openPanel === 'crime' && <CrimePanel onClose={() => setOpenPanel(null)} activeOpportunity={crimeOpportunity} />}
           {openPanel === 'hospital' && <HospitalPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'restaurant' && <RestaurantPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'city_hall' && <CityHallPanel onClose={() => setOpenPanel(null)} />}

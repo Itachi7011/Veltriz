@@ -29,6 +29,12 @@ export class CameraRig {
     this.minPitch = -1.15;
     this.maxPitch = 1.0;
 
+    // Weapon recoil kick — added on top of mouse-driven aim, decays back
+    // to zero on its own each frame. Kept separate from `pitch`/`yaw` so
+    // recoil never fights with or gets "absorbed" by mouse input.
+    this.recoilPitch = 0;
+    this.recoilYaw = 0;
+
     this.raycaster = new THREE.Raycaster();
     // Required by three.js whenever you raycast against a THREE.Sprite
     // (the building name-sign labels are sprites) — without this, Sprite's
@@ -78,16 +84,31 @@ export class CameraRig {
     if (document.pointerLockElement === this.domElement) document.exitPointerLock?.();
   }
 
+  /** Called by WeaponSystem on every shot fired — a brief upward/random kick. */
+  addRecoil(pitchKick, yawKick = 0) {
+    this.recoilPitch += pitchKick;
+    this.recoilYaw += yawKick;
+  }
+
   /** collidables: array of THREE.Mesh/Group used for the TPV pull-in raycast */
   update(playerPos, collidables) {
+    // Recoil decays back to zero on its own — snappy kick, smooth recovery.
+    this.recoilPitch *= 0.9;
+    this.recoilYaw *= 0.9;
+    if (Math.abs(this.recoilPitch) < 0.0002) this.recoilPitch = 0;
+    if (Math.abs(this.recoilYaw) < 0.0002) this.recoilYaw = 0;
+
+    const effectivePitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch + this.recoilPitch));
+    const effectiveYaw = this.yaw + this.recoilYaw;
+
     const headY = playerPos.y + FPV_HEIGHT;
 
     if (this.mode === 'first') {
       this.camera.position.set(playerPos.x, headY, playerPos.z);
       const dir = new THREE.Vector3(
-        Math.sin(this.yaw) * Math.cos(this.pitch),
-        Math.sin(this.pitch),
-        Math.cos(this.yaw) * Math.cos(this.pitch)
+        Math.sin(effectiveYaw) * Math.cos(effectivePitch),
+        Math.sin(effectivePitch),
+        Math.cos(effectiveYaw) * Math.cos(effectivePitch)
       );
       this.camera.lookAt(
         playerPos.x + dir.x,
@@ -96,9 +117,9 @@ export class CameraRig {
       );
     } else {
       const targetY = playerPos.y + TPV_HEIGHT;
-      const dirX = Math.sin(this.yaw) * Math.cos(this.pitch);
-      const dirY = Math.sin(this.pitch);
-      const dirZ = Math.cos(this.yaw) * Math.cos(this.pitch);
+      const dirX = Math.sin(effectiveYaw) * Math.cos(effectivePitch);
+      const dirY = Math.sin(effectivePitch);
+      const dirZ = Math.cos(effectiveYaw) * Math.cos(effectivePitch);
 
       let dist = TPV_DISTANCE;
       if (collidables && collidables.length) {
@@ -118,8 +139,13 @@ export class CameraRig {
 
     // Character always faces camera yaw (movement direction handling is
     // done by the caller feeding moveX/moveZ relative to this same yaw).
+    // NOTE: no + Math.PI here — the model's front (see CharacterModel's
+    // face/eyes, built facing local +Z) already maps to this same
+    // (sin(yaw), cos(yaw)) world direction, i.e. the direction movement
+    // treats as "forward". Adding a flip here pointed the character's
+    // face backward relative to the way it actually walks.
     if (this.characterGroup) {
-      this.characterGroup.rotation.y = this.yaw + Math.PI;
+      this.characterGroup.rotation.y = this.yaw;
       this.characterGroup.visible = this.mode !== 'first';
     }
   }

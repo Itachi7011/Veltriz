@@ -1,59 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import gameEvents from '../gameEvents';
+import { BUILDING_COLORS, DEFAULT_BUILDING_COLOR, ZONE_MAP_COLORS, zoneForX } from './mapColors';
 
-const BOX_WIDTH = 180;
-const BOX_HEIGHT = 120;
-
-const BUILDING_COLORS = {
-  job_center: '#22c55e',
-  market: '#f59e0b',
-  bank: '#38bdf8',
-  home: '#a78bfa',
-  hospital: '#ef4444',
-  restaurant: '#fb923c',
-  city_hall: '#facc15',
-  park: '#4ade80',
-  electronics: '#06b6d4',
-  boutique: '#ec4899',
-  jeweler: '#d946ef',
-  gym: '#84cc16',
-  casino: '#a855f7',
-  stock_exchange: '#10b981',
-  school: '#fbbf24',
-  real_estate: '#f472b6',
-  police_station: '#3b82f6',
-  cinema: '#e11d48',
-  factory: '#78716c',
-  credit_union: '#0ea5e9',
-  insurance_office: '#14b8a6',
-  lottery: '#f43f5e',
-  courthouse: '#a16207',
-  university: '#6366f1',
-  logistics_hub: '#ea580c',
-  government_complex: '#64748b',
-  hardware_store: '#b45309',
-  trading_post: '#65a30d',
-  embassy: '#0891b2',
-  tech_campus: '#6d28d9',
-  quantum_labs: '#db2777',
-  gun_store: '#7f1d1d',
-  farm: '#65a30d',
-  port_authority: '#0e7490',
-  fish_market: '#0284c7',
-  pearl_exchange: '#a78bfa',
-  vehicle_dealer: '#f97316',
-  marina: '#0ea5e9',
-  fishing_wharf: '#0891b2',
-  oil_rig: '#f59e0b',
-  marine_research: '#8b5cf6',
-  smugglers_den: '#450a0a',
-};
+const BOX_SIZE = 168; // square widget, circular radar clipped inside it
+const RADIUS_PX = BOX_SIZE / 2 - 6;
+// How much of the world (in original map pixels) is visible in the radar
+// at once. Buildings are ~150-400 map-px wide and houses ~100-150, so a
+// ~1500px-diameter window reliably shows several nearby structures
+// clearly instead of the old approach of squeezing the ENTIRE 62,400px
+// map into a 180x120 box (where every building overlapped into noise).
+const VIEW_RADIUS = 800;
 
 /**
- * Always-visible small map, top-right corner (the standard "minimap"
- * convention most games use). Positions are pushed from MainScene via the
- * shared gameEvents bus (see 'minimap:update' in MainScene.js's update
- * loop) rather than polling — cheap and stays in sync with movement.
+ * Always-visible small radar, top-right corner — like the minimap in
+ * GTA/most open-world games: zoomed in on your immediate surroundings,
+ * centered on you, and rotating so "forward" (the way the camera is
+ * facing) is always up. Positions are pushed from the 3D engine via the
+ * shared gameEvents bus ('minimap:update'), not polled.
  */
 const MiniMap = ({ mapConfig, onExpand }) => {
   const [self, setSelf] = useState(null);
@@ -68,10 +31,27 @@ const MiniMap = ({ mapConfig, onExpand }) => {
     return () => gameEvents.off('minimap:update', onUpdate);
   }, []);
 
-  if (!mapConfig) return null;
+  if (!mapConfig || !self) return null;
 
-  const scaleX = BOX_WIDTH / mapConfig.width;
-  const scaleY = BOX_HEIGHT / mapConfig.height;
+  const pxPerUnit = RADIUS_PX / VIEW_RADIUS;
+  const zone = zoneForX(mapConfig.zones, self.x);
+  const zoneColors = (zone && ZONE_MAP_COLORS[zone.key]) || ZONE_MAP_COLORS.default;
+
+  // Rotate the world so the current facing direction always points up on
+  // screen: forward direction in map-space is (sin(yaw), cos(yaw)), and
+  // the SVG group needs rotating by (yaw - 180deg) to bring that vector
+  // to point straight up. See CHANGES notes for the derivation.
+  const facing = self.facing || 0;
+  const rotateDeg = (facing * 180) / Math.PI - 180;
+
+  const nearby = (list, pad = 1.4) =>
+    list.filter((item) => Math.hypot(item.x - self.x, item.y - self.y) < VIEW_RADIUS * pad);
+
+  const buildings = nearby(mapConfig.buildings || []);
+  const houses = nearby(mapConfig.houses || [], 1.15);
+  const visibleOthers = others.filter((o) => Math.hypot(o.x - self.x, o.y - self.y) < VIEW_RADIUS * 1.4);
+
+  const worldToLocal = (x, y) => ({ x: (x - self.x) * pxPerUnit, y: (y - self.y) * pxPerUnit });
 
   return (
     <button
@@ -81,28 +61,68 @@ const MiniMap = ({ mapConfig, onExpand }) => {
       aria-label="Open full map (M)"
       title="Open full map (M)"
     >
-      <svg width={BOX_WIDTH} height={BOX_HEIGHT} viewBox={`0 0 ${BOX_WIDTH} ${BOX_HEIGHT}`}>
-        <rect x={0} y={0} width={BOX_WIDTH} height={BOX_HEIGHT} fill="#1a1e33" />
+      <svg width={BOX_SIZE} height={BOX_SIZE} viewBox={`0 0 ${BOX_SIZE} ${BOX_SIZE}`}>
+        <defs>
+          <clipPath id="veltriz-minimap-clip">
+            <circle cx={BOX_SIZE / 2} cy={BOX_SIZE / 2} r={RADIUS_PX} />
+          </clipPath>
+        </defs>
 
-        {mapConfig.buildings.map((b) => (
-          <rect
-            key={b.id}
-            x={b.x * scaleX - 3}
-            y={b.y * scaleY - 3}
-            width={6}
-            height={6}
-            fill={BUILDING_COLORS[b.type] || '#9ca0c2'}
-            rx={1}
-          />
-        ))}
+        <circle cx={BOX_SIZE / 2} cy={BOX_SIZE / 2} r={RADIUS_PX + 3} fill="#0a0c14" stroke="#3a3f5c" strokeWidth={2} />
 
-        {others.map((o, i) => (
-          <circle key={i} cx={o.x * scaleX} cy={o.y * scaleY} r={2} fill="#6b7094" />
-        ))}
+        <g clipPath="url(#veltriz-minimap-clip)">
+          <g transform={`translate(${BOX_SIZE / 2} ${BOX_SIZE / 2}) rotate(${rotateDeg})`}>
+            <rect
+              x={-VIEW_RADIUS * pxPerUnit}
+              y={-VIEW_RADIUS * pxPerUnit}
+              width={VIEW_RADIUS * pxPerUnit * 2}
+              height={VIEW_RADIUS * pxPerUnit * 2}
+              fill={zoneColors.ground}
+            />
 
-        {self && <circle cx={self.x * scaleX} cy={self.y * scaleY} r={3.2} fill="#ffd76a" stroke="#fff" strokeWidth={0.6} />}
+            {houses.map((h) => {
+              const p = worldToLocal(h.x, h.y);
+              return <rect key={h.id} x={p.x - 2} y={p.y - 2} width={4} height={4} fill={h.color || '#4a5170'} opacity={0.75} />;
+            })}
+
+            {buildings.map((b) => {
+              const p = worldToLocal(b.x, b.y);
+              return (
+                <rect
+                  key={b.id}
+                  x={p.x - 4}
+                  y={p.y - 4}
+                  width={8}
+                  height={8}
+                  rx={1.5}
+                  fill={BUILDING_COLORS[b.type] || DEFAULT_BUILDING_COLOR}
+                  stroke="#0a0c14"
+                  strokeWidth={0.6}
+                />
+              );
+            })}
+
+            {visibleOthers.map((o, i) => {
+              const p = worldToLocal(o.x, o.y);
+              return <circle key={i} cx={p.x} cy={p.y} r={3} fill="#6b7094" stroke="#0a0c14" strokeWidth={0.8} />;
+            })}
+
+            {/* Player marker: a fixed triangle pointing up (since the map
+                rotates around them, they never need to rotate themselves). */}
+            <polygon points="0,-8 6,7 -6,7" fill="#ffd76a" stroke="#fff" strokeWidth={1} />
+          </g>
+        </g>
+
+        {/* Fixed compass-north tick, rotates opposite the world so it
+            always shows true north regardless of facing. */}
+        <g transform={`translate(${BOX_SIZE / 2} ${BOX_SIZE / 2}) rotate(${rotateDeg})`}>
+          <text x={0} y={-RADIUS_PX + 12} fill="#ffffffaa" fontSize="9" textAnchor="middle" fontWeight="700">
+            N
+          </text>
+        </g>
       </svg>
       <span className="veltriz-game-minimap-hint">M</span>
+      {zone && <span className="veltriz-game-minimap-zone">{zone.name}</span>}
     </button>
   );
 };

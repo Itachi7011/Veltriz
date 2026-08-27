@@ -1,0 +1,25 @@
+{
+  "name": "veltriz",
+  "private": true,
+  "description": "Root workspace orchestrator — one `npm install` and one `npm run dev` for all 8 services/apps instead of 8 separate terminals.",
+  "workspaces": [
+    "auth-service",
+    "economy-service",
+    "game-world-service",
+    "admin-service",
+    "simulation-service",
+    "crime-service",
+    "game-client",
+    "admin-client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n auth,economy,gameworld,admin-svc,simulation,crime,game-client,admin-client -c blue,green,cyan,magenta,yellow,red,white,gray \"npm run dev -w auth-service\" \"npm run dev -w economy-service\" \"npm run dev -w game-world-service\" \"npm run dev -w admin-service\" \"npm run dev -w simulation-service\" \"npm run dev -w crime-service\" \"npm run dev -w game-client\" \"npm run dev -w admin-client\"",
+    "dev:backend": "concurrently -k -n auth,economy,gameworld,admin-svc,simulation,crime -c blue,green,cyan,magenta,yellow,red \"npm run dev -w auth-service\" \"npm run dev -w economy-service\" \"npm run dev -w game-world-service\" \"npm run dev -w admin-service\" \"npm run dev -w simulation-service\" \"npm run dev -w crime-service\"",
+    "dev:frontend": "concurrently -k -n game-client,admin-client -c white,gray \"npm run dev -w game-client\" \"npm run dev -w admin-client\"",
+    "build": "npm run build -w game-client && npm run build -w admin-client",
+    "seed": "npm run seed -w economy-service && npm run seed:payments -w economy-service && npm run seed -w crime-service && npm run seed -w game-world-service && npm run seed -w simulation-service"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

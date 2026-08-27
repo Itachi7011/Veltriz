@@ -5,6 +5,8 @@ import { buildWorld } from './WorldBuilder';
 import { buildStructure } from './BuildingBuilder';
 import { PhysicsController } from './PhysicsController';
 import { CameraRig } from './CameraRig';
+import { NpcSystem } from './NpcSystem';
+import { WeaponSystem, WEAPON_SLOTS } from './WeaponSystem';
 
 export const WORLD_SCALE = 0.08; // 1 map pixel -> 0.08 world units (~12.5px per meter)
 const MOVE_EMIT_INTERVAL_MS = 90;
@@ -13,6 +15,20 @@ const CULL_TICK_MS = 300;
 const HOUSE_RENDER_DIST = 95;
 const BUILDING_RENDER_DIST = 190;
 const NEARBY_COLLIDABLE_DIST = 40;
+const CRIME_INTERACT_DIST = 3.2;
+const BUST_DIST = 1.7;
+
+// Which crime actions require being physically at a matching kind of
+// place — this is what turns "crime" from a menu you can click from
+// anywhere into something you have to actually walk up to and do.
+const CRIME_LOCATIONS = {
+  pickpocket: { kind: 'npc' },
+  shoplift: { kind: 'building', types: ['market', 'boutique', 'electronics', 'jeweler', 'hardware_store', 'trading_post'] },
+  burglary: { kind: 'house' },
+  carjack: { kind: 'building', types: ['vehicle_dealer'] },
+  smuggling: { kind: 'building', types: ['marina', 'port_authority', 'smugglers_den', 'fishing_wharf'] },
+  heist: { kind: 'building', types: ['bank', 'stock_exchange'] },
+};
 
 function hashAppearanceFromId(id) {
   let h = 0;
@@ -46,7 +62,9 @@ export default class GameEngine {
     this._initWorld();
     this._initPlayer();
     this._initPhysics();
+    this._initNpcs();
     this._initCamera();
+    this._initWeapons();
     this._initInput();
     this._wireSocket();
 
@@ -55,6 +73,9 @@ export default class GameEngine {
 
     this._tick = this._tick.bind(this);
     this.rafId = requestAnimationFrame(this._tick);
+
+    this._onAlertPolice = () => this.alertPoliceNear();
+    gameEvents.on('crime:alertPolice', this._onAlertPolice);
 
     gameEvents.emit('scene:ready');
   }
@@ -139,6 +160,18 @@ export default class GameEngine {
     this.physics.setSpawn(spawnX, spawnZ);
   }
 
+  // ---------------------------------------------------------------- NPCS
+  _initNpcs() {
+    this.npcSystem = new NpcSystem({
+      scene: this.scene,
+      mapConfig: this.mapConfig,
+      scale: this.scale,
+      colliders: this.physics.getColliders(),
+    });
+    this.currentCrimeOpportunity = null;
+    this._bustedAt = 0;
+  }
+
   // ------------------------------------------------------------- CAMERA
   _initCamera() {
     this.cameraRig = new CameraRig({
@@ -146,6 +179,18 @@ export default class GameEngine {
       domElement: this.renderer.domElement,
       scene: this.scene,
       characterGroup: this.playerRig.group,
+    });
+  }
+
+  // ------------------------------------------------------------ WEAPONS
+  _initWeapons() {
+    this.weaponSystem = new WeaponSystem({
+      scene: this.scene,
+      camera: this.camera,
+      cameraRig: this.cameraRig,
+      bones: this.playerRig.bones,
+      npcSystem: this.npcSystem,
+      playerHeightGetter: () => this.physics.getPosition().y,
     });
   }
 
@@ -159,12 +204,41 @@ export default class GameEngine {
         const mode = this.cameraRig.toggleMode();
         gameEvents.emit('camera:mode', mode);
       }
+      if (e.code === 'KeyR') {
+        this.weaponSystem.startReload();
+      }
+      const slotIndex = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(e.code);
+      if (slotIndex !== -1 && WEAPON_SLOTS[slotIndex]) {
+        this.weaponSystem.equip(WEAPON_SLOTS[slotIndex]);
+      }
     };
     this._onKeyUp = (e) => {
       this.keys[e.code] = false;
     };
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+
+    // Mouse: left click fires/swings (only once actually pointer-locked,
+    // so the very first click — which just requests pointer lock — never
+    // also counts as a shot), right click aims/scopes while held.
+    this._onMouseDown = (e) => {
+      if (!this.inputEnabled) return;
+      const locked = document.pointerLockElement === this.renderer.domElement;
+      if (!locked) return;
+      if (e.button === 0) {
+        this._firePressed = true;
+      } else if (e.button === 2) {
+        this.weaponSystem.setAiming(true);
+      }
+    };
+    this._onMouseUp = (e) => {
+      if (e.button === 0) this._firePressed = false;
+      if (e.button === 2) this.weaponSystem?.setAiming(false);
+    };
+    this._onContextMenu = (e) => e.preventDefault();
+    this.renderer.domElement.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mouseup', this._onMouseUp);
+    this.renderer.domElement.addEventListener('contextmenu', this._onContextMenu);
   }
 
   /**
@@ -176,6 +250,8 @@ export default class GameEngine {
     this.inputEnabled = enabled;
     if (!enabled) {
       this.keys = {};
+      this._firePressed = false;
+      this.weaponSystem?.setAiming(false);
       this.cameraRig?.releasePointerLock();
     }
   }
@@ -252,9 +328,13 @@ export default class GameEngine {
       this._updateRemoteInterpolation();
       this._updateCulling(now);
       this._updateBuildingProximity();
+      this._updateCrimeProximity();
 
       const pos = this.physics.getPosition();
-      this.cameraRig.update({ x: pos.x, y: pos.y - 0.9, z: pos.z }, this._nearbyCollidables || []);
+      this.npcSystem.update(dt, { x: pos.x, z: pos.z }, now);
+      this._checkBusted(pos, now);
+      this.cameraRig.update({ x: pos.x, y: pos.y, z: pos.z }, this._nearbyCollidables || []);
+      this._updateWeapon(dt, pos);
     } catch (err) {
       // A logic error in movement/culling/camera should never prevent the
       // frame from being drawn — surfacing a black screen with silent,
@@ -276,8 +356,8 @@ export default class GameEngine {
     const jumpPressed = !!this.keys.Space;
 
     this.physics.update(dt, {
-      moveX: strafe,
-      moveZ: -forward,
+      forward,
+      strafe,
       facingYaw: this.cameraRig.facingYaw,
       running,
       jumpPressed,
@@ -285,8 +365,10 @@ export default class GameEngine {
     if (this.keys.Space) this.keys.Space = false; // single jump per press
 
     const pos = this.physics.getPosition();
-    const feetY = pos.y - 0.875; // PLAYER_HEIGHT/2
-    this.playerRig.group.position.set(pos.x, feetY, pos.z);
+    // The controller's y is already the feet/ground-relative height (0 =
+    // standing on the ground, >0 only while jumping) — no center-of-mass
+    // offset needed here anymore.
+    this.playerRig.group.position.set(pos.x, pos.y, pos.z);
 
     const speedMag = Math.hypot(this.physics.velocity.x, this.physics.velocity.z);
     const speedFactor = Math.min(1, speedMag / 6.6);
@@ -312,7 +394,7 @@ export default class GameEngine {
     if (now - this.lastMinimapEmitAt > MINIMAP_EMIT_INTERVAL_MS) {
       this.lastMinimapEmitAt = now;
       gameEvents.emit('minimap:update', {
-        self: { x: pos.x / this.scale, y: pos.z / this.scale },
+        self: { x: pos.x / this.scale, y: pos.z / this.scale, facing: this.cameraRig.facingYaw },
         others: Array.from(this.remotePlayers.values()).map((e) => ({
           x: e.targetX / this.scale,
           y: e.targetZ / this.scale,
@@ -359,6 +441,8 @@ export default class GameEngine {
       })
       .map((e) => e.group);
 
+    this.npcSystem.applyCulling(pos, HOUSE_RENDER_DIST);
+
     // Keep the sun's shadow frustum centered near the player so shadows
     // stay sharp anywhere across a 60,000+ pixel-wide map.
     this.sun.position.set(pos.x + 40, pos.y + 70, pos.z + 20);
@@ -389,6 +473,88 @@ export default class GameEngine {
     }
   }
 
+  // ---------------------------------------------------------------- WEAPON
+  _updateWeapon(dt, pos) {
+    this.weaponSystem.update(dt);
+    if (this._firePressed) {
+      if (this.weaponSystem.isAutomaticNow()) {
+        this.weaponSystem.tryFire({ x: pos.x, z: pos.z });
+      } else if (!this._fireHandledForThisPress) {
+        this.weaponSystem.tryFire({ x: pos.x, z: pos.z });
+        this._fireHandledForThisPress = true;
+      }
+    } else {
+      this._fireHandledForThisPress = false;
+    }
+  }
+
+  // ----------------------------------------------------------- CRIME
+  /**
+   * Finds the nearest matching physical location for each crime action
+   * (a shop for shoplifting, a house for burglary, a wandering NPC for
+   * pickpocketing, etc.) and emits 'crime:opportunity' only when the
+   * player is actually standing at one — this is what CrimePanel uses to
+   * only let you attempt a crime you're physically at, instead of any
+   * crime from anywhere.
+   */
+  _updateCrimeProximity() {
+    const pos = this.physics.getPosition();
+    let found = null;
+
+    for (const [actionKey, loc] of Object.entries(CRIME_LOCATIONS)) {
+      if (loc.kind === 'building') {
+        for (const entry of this.buildingEntries) {
+          if (!loc.types.includes(entry.data.type)) continue;
+          const fp = entry.footprint;
+          const d = Math.hypot(fp.x - pos.x, fp.z - pos.z);
+          if (d < Math.max(CRIME_INTERACT_DIST, fp.halfW + 1.5, fp.halfD + 1.5)) {
+            found = { actionKey, label: entry.data.name };
+            break;
+          }
+        }
+      } else if (loc.kind === 'house') {
+        for (const entry of this.houseEntries) {
+          const fp = entry.footprint;
+          const d = Math.hypot(fp.x - pos.x, fp.z - pos.z);
+          if (d < Math.max(CRIME_INTERACT_DIST, fp.halfW + 1.2, fp.halfD + 1.2)) {
+            found = { actionKey, label: entry.data.name };
+            break;
+          }
+        }
+      } else if (loc.kind === 'npc') {
+        const nearestCivilian = this.npcSystem.active.find((n) => {
+          if (n.role !== 'civilian') return false;
+          const d = Math.hypot(n.rig.group.position.x - pos.x, n.rig.group.position.z - pos.z);
+          return d < CRIME_INTERACT_DIST;
+        });
+        if (nearestCivilian) found = { actionKey, label: 'a passerby' };
+      }
+      if (found) break;
+    }
+
+    const changed = found?.actionKey !== this.currentCrimeOpportunity?.actionKey;
+    if (changed) {
+      this.currentCrimeOpportunity = found;
+      gameEvents.emit('crime:opportunity', found);
+    }
+  }
+
+  _checkBusted(pos, now) {
+    if (now - this._bustedAt < 15000) return; // cooldown so it can't spam-fire
+    const chaser = this.npcSystem.getNearestPolice({ x: pos.x, z: pos.z }, BUST_DIST);
+    if (chaser && chaser.chasing) {
+      this._bustedAt = now;
+      this.npcSystem.alertedUntil = 0;
+      gameEvents.emit('crime:busted');
+    }
+  }
+
+  /** Called by the crime UI after a risky/failed attempt to send nearby police after the player. */
+  alertPoliceNear() {
+    const pos = this.physics.getPosition();
+    this.npcSystem.alertNear(pos.x, pos.z);
+  }
+
   // -------------------------------------------------------------- PUBLIC
   pause() {
     this.paused = true;
@@ -414,6 +580,9 @@ export default class GameEngine {
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('mouseup', this._onMouseUp);
+    this.renderer.domElement.removeEventListener('mousedown', this._onMouseDown);
+    this.renderer.domElement.removeEventListener('contextmenu', this._onContextMenu);
 
     if (this.socket) {
       this.socket.off('world:snapshot', this._onSnapshot);
@@ -421,9 +590,12 @@ export default class GameEngine {
       this.socket.off('player:moved', this._onMoved);
       this.socket.off('player:left', this._onLeft);
     }
+    gameEvents.off('crime:alertPolice', this._onAlertPolice);
 
     this.cameraRig?.dispose();
     this.physics?.dispose();
+    this.npcSystem?.dispose();
+    this.weaponSystem?.dispose();
 
     this.scene.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();

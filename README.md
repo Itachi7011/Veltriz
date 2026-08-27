@@ -23,6 +23,30 @@ Node/Express + MongoDB + React, no Redis/BullMQ/TypeScript/Three.js:
 | `game-client` | 5173 (dev) | The player-facing game (React + Phaser) |
 | `admin-client` | 5174 (dev) | The admin dashboard (React) |
 
+### Run everything at once (instead of 8 terminals)
+
+The root `package.json` uses npm workspaces to cover all 8 services/apps
+with one install and one run command:
+
+```bash
+npm install     # once, from the repo root — installs all 8 workspaces
+npm run dev     # starts all 8 (auth, economy, game-world, admin-service,
+                 # simulation, crime, game-client, admin-client) together,
+                 # each line prefixed with its service name/color
+```
+
+Other useful root scripts: `npm run dev:backend` (just the 6 Node
+services), `npm run dev:frontend` (just the 2 React apps), `npm run build`
+(builds both clients), `npm run seed` (manually re-runs every service's
+seed script — not required anymore since each service auto-seeds its
+defaults on boot, but still there for a forced reseed).
+
+Each service still has its own `.env` — the root scripts don't change
+that, they just save you from opening/managing 8 terminals by hand. You
+can still `cd` into any one service and run its own `npm run dev`
+individually exactly as before, if you only want that one.
+
+
 Every backend service shares one MongoDB cluster (separate collections, no
 cross-service `ref`s) and a shared `JWT_SECRET` (player auth) +
 `INTERNAL_API_KEY` (service-to-service calls). Each service has its own
