@@ -1,148 +1,101 @@
-import * as CANNON from 'cannon-es';
-
 const GRAVITY = -22;
-const WALK_SPEED = 3.4;
-const RUN_SPEED = 6.6;
+const WALK_SPEED = 8.5; // 2.5x the original 3.4
+const RUN_SPEED = 17; // Shift — roughly the same walk:run ratio as before, scaled up
+const SKATE_SPEED = 24; // Skateboard mode
+const SKATE_BOOST_SPEED = 34; // Skateboard + Shift — fastest way to get around on foot
 const JUMP_SPEED = 7.2;
-const PLAYER_RADIUS = 0.32;
+const PLAYER_RADIUS = 0.34;
 const PLAYER_HEIGHT = 1.75;
-// Two stacked spheres approximate a capsule. cannon-es resolves sphere-vs-
-// box and sphere-vs-plane contacts very robustly; a single tall Cylinder
-// (the previous approach) is internally a low-face ConvexPolyhedron in
-// cannon-es, and colliding its flat top/bottom/edge faces against the
-// building/house boxes packed densely across this map could occasionally
-// produce a wildly incorrect contact normal — the exact "player suddenly
-// rockets upward and never comes back down" bug this replaces.
-const SPHERE_OFFSET = PLAYER_HEIGHT / 2 - PLAYER_RADIUS;
-const MAX_FALL_SPEED = 28;
-const MAX_RISE_SPEED = 12;
-const GROUND_CLEARANCE = 0.05;
-// playerBody.position.y is the capsule's CENTER height (baseline ≈0.925 at
-// rest, since the body itself never sits at y=0). Everything outside this
-// class — the rig's visual position, camera eye height, etc. — wants a
-// feet-on-the-ground value where 0 = standing and >0 only while airborne.
-// getPosition() subtracts this baseline so callers get that, while the
-// raw playerBody.position (still true center height) is used for every
-// physics/raycast calculation inside this class.
-const GROUND_BASELINE_Y = PLAYER_HEIGHT / 2 + GROUND_CLEARANCE;
-
-// Collision groups: the ground-check raycast below must never be able to
-// hit the player's own compound shape (it's an infinite-radius query
-// starting at the body's own center, so it will otherwise cross the
-// body's own lower sphere every time and can report "grounded" even
-// mid-air) — putting the player on its own group and masking the ray to
-// world-only geometry makes the ground check test the actual world, not
-// itself.
-const GROUP_WORLD = 1;
-const GROUP_PLAYER = 2;
+const TERMINAL_VELOCITY = -30;
 
 /**
- * A small real physics world (cannon-es): gravity, a static collider per
- * building/house footprint (kept 1:1 with the existing map data — nothing
- * removed, just given real height/depth instead of a 2D sensor rectangle),
- * and a capsule-like player body that can walk, run, jump, and collide
- * with the city instead of sliding around on an invisible top-down plane.
+ * A small deterministic kinematic controller — deliberately NOT a rigid-
+ * body physics engine (see CHANGES notes for why cannon-es was removed).
+ *
+ * Horizontal movement: every building/house/obstacle is treated as a
+ * solid vertical column — a circle-vs-rectangle overlap test in the X/Z
+ * plane, full height, no vertical component at all. This matches how the
+ * original 2D game already worked (walk around buildings, enter through
+ * the interaction prompt, never through/over a wall), and — importantly —
+ * makes it structurally impossible for a horizontal wall collision to
+ * ever inject vertical velocity, which is exactly the class of bug a
+ * rigid-body solver was producing here.
+ *
+ * Vertical movement: purely gravity + jump against a flat ground plane at
+ * y=0. Nothing about buildings ever touches the Y axis.
  */
 export class PhysicsController {
   constructor({ mapConfig, scale }) {
     this.scale = scale;
-    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, GRAVITY, 0) });
-    this.world.broadphase = new CANNON.SAPBroadphase(this.world);
-    this.world.allowSleep = true;
-    this.world.solver.iterations = 12;
-    this.world.defaultContactMaterial.friction = 0.02;
-
-    this.groundMaterial = new CANNON.Material('ground');
-    this.playerMaterial = new CANNON.Material('player');
-    this.world.addContactMaterial(
-      new CANNON.ContactMaterial(this.groundMaterial, this.playerMaterial, {
-        friction: 0.0,
-        restitution: 0.0,
-        contactEquationStiffness: 1e8,
-        contactEquationRelaxation: 4,
-      })
-    );
-
-    // Ground plane
-    const groundBody = new CANNON.Body({ mass: 0, material: this.groundMaterial });
-    groundBody.collisionFilterGroup = GROUP_WORLD;
-    groundBody.addShape(new CANNON.Plane());
-    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    this.world.addBody(groundBody);
-
-    // Player body: compound of two spheres (a "pill" shape), far more
-    // stable against dense box geometry than a single cylinder.
-    this.playerBody = new CANNON.Body({
-      mass: 62,
-      material: this.playerMaterial,
-      fixedRotation: true,
-      linearDamping: 0.001,
-      // Never let the controllable player sleep: cannon-es stops
-      // integrating a sleeping body's position even after its velocity
-      // is set again from outside, which is exactly what "moves fine at
-      // first, but freezes (with the walk animation still playing) after
-      // any pause" looks like — the body nodded off and never woke back up.
-      allowSleep: false,
-    });
-    this.playerBody.collisionFilterGroup = GROUP_PLAYER;
-    this.playerBody.collisionFilterMask = GROUP_WORLD;
-    const sphereShape = new CANNON.Sphere(PLAYER_RADIUS);
-    this.playerBody.addShape(sphereShape, new CANNON.Vec3(0, SPHERE_OFFSET, 0));
-    this.playerBody.addShape(sphereShape, new CANNON.Vec3(0, -SPHERE_OFFSET, 0));
-    this.playerBody.position.set(0, GROUND_BASELINE_Y, 0);
-    this.world.addBody(this.playerBody);
-
-    this.structureBodies = [];
-    this.colliderBoxes = []; // plain {x,z,halfW,halfD} list, e.g. for NpcSystem's non-physics blocking checks
-    this._buildStaticColliders(mapConfig);
-
-    this.isGrounded = false;
+    this.position = { x: 0, y: 0, z: 0 };
+    this.velocityY = 0;
     this.velocity = { x: 0, z: 0 };
-    this._lastSafePosition = new CANNON.Vec3(0, GROUND_BASELINE_Y, 0);
+    this.isGrounded = true;
+
+    this.colliders = this._buildColliders(mapConfig);
   }
 
-  _buildStaticColliders(mapConfig) {
+  /** Shared read-only collider list — used by NpcSystem for wander-target avoidance too. */
+  getColliders() {
+    return this.colliders;
+  }
+
+  _buildColliders(mapConfig) {
     const { buildings = [], houses = [], obstacles = [] } = mapConfig;
     const s = this.scale;
+    const colliders = [];
 
-    const addBox = (x, z, halfW, halfD, height, yOffset = 0) => {
-      const body = new CANNON.Body({ mass: 0, material: this.groundMaterial });
-      body.collisionFilterGroup = GROUP_WORLD;
-      body.addShape(new CANNON.Box(new CANNON.Vec3(halfW, height / 2, halfD)));
-      body.position.set(x, height / 2 + yOffset, z);
-      this.world.addBody(body);
-      this.structureBodies.push(body);
-      this.colliderBoxes.push({ x, z, halfW, halfD });
+    const addCollider = (x, z, halfW, halfD) => {
+      // A small inward margin so the collision box roughly matches the
+      // building's visible wall footprint rather than its slightly larger
+      // paved apron, and doesn't feel like an invisible force-field a
+      // full meter before the wall.
+      colliders.push({ x, z, halfW: Math.max(0.2, halfW - 0.1), halfD: Math.max(0.2, halfD - 0.1) });
     };
 
-    buildings.forEach((b) => {
-      const floors = 3; // matches BuildingBuilder default footprint collider (approximate, generous)
-      const height = Math.max(3, floors * 1.05);
-      addBox(b.x * s, b.y * s, (b.width * s) / 2, (b.height * s) / 2, height);
-    });
-    houses.forEach((h) => {
-      // Mirrors BuildingBuilder's classifyHouse() heuristic closely enough
-      // for a collision box (doesn't need to be pixel-perfect): tall
-      // condo/tower-shaped houses get a taller collider than small
-      // cottages, so you can't see through the top of a "penthouse" into
-      // thin air.
-      const isTowerLike = /tower|condo|flat|loft|penthouse|apartment|suite|estate|complex|residence|studio|unit/i.test(
-        h.houseType || ''
-      );
-      const price = h.price || 0;
-      const floors = isTowerLike && price > 2200 ? Math.max(2, Math.min(9, 2 + Math.floor(price / 3200))) : price > 4500 ? 2 : 1;
-      const height = floors * 0.95;
-      addBox(h.x * s, h.y * s, (h.width * s) / 2, (h.height * s) / 2, height);
-    });
-    obstacles.forEach((o) => {
-      addBox(o.x * s, o.y * s, Math.max(0.15, (o.width * s) / 2), Math.max(0.15, (o.height * s) / 2), 0.7);
-    });
+    buildings.forEach((b) => addCollider(b.x * s, b.y * s, (b.width * s) / 2, (b.height * s) / 2));
+    houses.forEach((h) => addCollider(h.x * s, h.y * s, (h.width * s) / 2, (h.height * s) / 2));
+    obstacles.forEach((o) => addCollider(o.x * s, o.y * s, Math.max(0.15, (o.width * s) / 2), Math.max(0.15, (o.height * s) / 2)));
+
+    return colliders;
+  }
+
+  /** True if a circle of PLAYER_RADIUS at (x,z) overlaps any collider. */
+  _blockedAt(x, z) {
+    for (let i = 0; i < this.colliders.length; i++) {
+      const c = this.colliders[i];
+      // Cheap reject before the precise check — skips the vast majority
+      // of the map's colliders every call.
+      if (Math.abs(x - c.x) > c.halfW + PLAYER_RADIUS || Math.abs(z - c.z) > c.halfD + PLAYER_RADIUS) continue;
+      const closestX = Math.min(Math.max(x, c.x - c.halfW), c.x + c.halfW);
+      const closestZ = Math.min(Math.max(z, c.z - c.halfD), c.z + c.halfD);
+      const dx = x - closestX;
+      const dz = z - closestZ;
+      if (dx * dx + dz * dz < PLAYER_RADIUS * PLAYER_RADIUS) return true;
+    }
+    return false;
   }
 
   setSpawn(x, z) {
-    this.playerBody.position.set(x, GROUND_BASELINE_Y, z);
-    this.playerBody.velocity.set(0, 0, 0);
-    this._lastSafePosition.set(x, GROUND_BASELINE_Y, z);
+    // If the exact spawn point happens to sit inside a collider (data
+    // edge case), nudge outward along a small spiral instead of leaving
+    // the player permanently stuck pushing against a wall from the
+    // inside.
+    let sx = x;
+    let sz = z;
+    if (this._blockedAt(sx, sz)) {
+      for (let r = 0.5; r <= 6 && this._blockedAt(sx, sz); r += 0.5) {
+        sx = x + r;
+        sz = z;
+        if (!this._blockedAt(sx, sz)) break;
+        sx = x;
+        sz = z + r;
+      }
+    }
+    this.position.x = sx;
+    this.position.z = sz;
+    this.position.y = 0;
+    this.velocityY = 0;
   }
 
   /**
@@ -152,84 +105,60 @@ export class PhysicsController {
    * @param {boolean} running
    * @param {boolean} jumpPressed
    */
-  update(dt, { forward, strafe, facingYaw, running, jumpPressed }) {
-    // Defensive wake-up: allowSleep:false above should already prevent
-    // this body from ever sleeping, but if anything upstream (e.g. a
-    // future cannon-es version, or code that flips allowSleep back on)
-    // changes that, real input should never silently fail to move a body
-    // that nodded off — this makes that impossible regardless.
-    if ((forward || strafe || jumpPressed) && this.playerBody.sleepState !== CANNON.Body.AWAKE) {
-      this.playerBody.wakeUp();
-    }
-
-    // Ground check via short downward raycast from the body's base.
-    const from = new CANNON.Vec3(this.playerBody.position.x, this.playerBody.position.y, this.playerBody.position.z);
-    const to = new CANNON.Vec3(from.x, from.y - (PLAYER_HEIGHT / 2 + 0.15), from.z);
-    const result = new CANNON.RaycastResult();
-    // collisionFilterMask: GROUP_WORLD only — excludes the player's own
-    // compound body so this can't self-intersect (see GROUP_WORLD/
-    // GROUP_PLAYER above), which previously made `grounded` unreliable.
-    this.world.raycastClosest(from, to, { collisionFilterMask: GROUP_WORLD }, result);
-    const grounded = result.hasHit;
-    this.isGrounded = grounded;
-
-    const speed = running ? RUN_SPEED : WALK_SPEED;
+  update(dt, { forward, strafe, facingYaw, running, jumpPressed, skateboarding }) {
+    const speed = skateboarding ? (running ? SKATE_BOOST_SPEED : SKATE_SPEED) : running ? RUN_SPEED : WALK_SPEED;
     const sin = Math.sin(facingYaw);
     const cos = Math.cos(facingYaw);
 
-    // Right vector consistent with this yaw convention (mouse-right decreases
-    // yaw, which rotates `forward` toward -X — see CameraRig's mouse handler)
-    // is (-cos(yaw), sin(yaw)), the negative of the naive right-hand-rule
-    // guess. Using the positive version here was the exact cause of A/D
-    // (and left/right arrow) being swapped.
-    const worldX = forward * sin - strafe * cos;
-    const worldZ = forward * cos + strafe * sin;
-    const len = Math.hypot(worldX, worldZ);
-    const nx = len > 0 ? (worldX / len) * speed : 0;
-    const nz = len > 0 ? (worldZ / len) * speed : 0;
+    // Same forward/right basis as CameraRig's look direction (sin(yaw),
+    // cos(yaw)) — pressing "forward" moves the direction the camera is
+    // looking.
+    // Same forward/right basis as CameraRig's look direction (sin(yaw),
+    // cos(yaw)). "Right" relative to that forward+up is
+    // cross(forward,up) = (-cos(yaw), 0, sin(yaw)) — verified numerically
+    // rather than assumed, since the previous version had this backwards
+    // (D/right-arrow was moving players toward their actual left).
+    const wishX = forward * sin - strafe * cos;
+    const wishZ = forward * cos + strafe * sin;
+    const len = Math.hypot(wishX, wishZ);
+    const dx = len > 0 ? (wishX / len) * speed * dt : 0;
+    const dz = len > 0 ? (wishZ / len) * speed * dt : 0;
 
-    this.playerBody.velocity.x = nx;
-    this.playerBody.velocity.z = nz;
+    // Resolve X and Z independently against the wall list — this is what
+    // gives you "sliding along a wall" for free instead of sticking dead
+    // when moving diagonally into a corner.
+    const nextX = this.position.x + dx;
+    if (!this._blockedAt(nextX, this.position.z)) this.position.x = nextX;
+    const nextZ = this.position.z + dz;
+    if (!this._blockedAt(this.position.x, nextZ)) this.position.z = nextZ;
 
-    if (jumpPressed && grounded) {
-      this.playerBody.velocity.y = JUMP_SPEED;
+    // Gravity + jump, entirely independent of the horizontal wall checks
+    // above — a building can never push the player up or down.
+    this.isGrounded = this.position.y <= 0.0001;
+    if (jumpPressed && this.isGrounded) {
+      this.velocityY = JUMP_SPEED;
+      this.isGrounded = false;
+    }
+    this.velocityY += GRAVITY * dt;
+    if (this.velocityY < TERMINAL_VELOCITY) this.velocityY = TERMINAL_VELOCITY;
+
+    this.position.y += this.velocityY * dt;
+    if (this.position.y <= 0) {
+      this.position.y = 0;
+      this.velocityY = 0;
+      this.isGrounded = true;
     }
 
-    // Safety clamp: a bad contact resolution should never be able to
-    // launch the player into the stratosphere or through the floor.
-    if (this.playerBody.velocity.y > MAX_RISE_SPEED) this.playerBody.velocity.y = MAX_RISE_SPEED;
-    if (this.playerBody.velocity.y < -MAX_FALL_SPEED) this.playerBody.velocity.y = -MAX_FALL_SPEED;
-
-    this.world.step(1 / 60, dt, 5);
-
-    // If something still slips through (e.g. spawned inside geometry) and
-    // the player ends up somewhere absurd, snap back to the last known
-    // grounded position instead of leaving them stuck in the void.
-    const p = this.playerBody.position;
-    const wildly = p.y > 40 || p.y < -20 || Number.isNaN(p.y);
-    if (wildly) {
-      this.playerBody.position.copy(this._lastSafePosition);
-      this.playerBody.velocity.set(0, 0, 0);
-    } else if (grounded && Math.abs(this.playerBody.velocity.y) < 3) {
-      this._lastSafePosition.copy(p);
-    }
-
-    this.velocity.x = nx;
-    this.velocity.z = nz;
-  }
-
-  getColliders() {
-    return this.colliderBoxes;
+    this.velocity.x = dx / dt || 0;
+    this.velocity.z = dz / dt || 0;
   }
 
   getPosition() {
-    const p = this.playerBody.position;
-    return { x: p.x, y: p.y - GROUND_BASELINE_Y, z: p.z };
+    return this.position;
   }
 
   dispose() {
-    this.structureBodies.forEach((b) => this.world.removeBody(b));
-    this.structureBodies = [];
+    this.colliders = [];
   }
 }
 

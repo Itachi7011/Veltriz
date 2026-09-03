@@ -139,13 +139,8 @@ export class CameraRig {
 
     // Character always faces camera yaw (movement direction handling is
     // done by the caller feeding moveX/moveZ relative to this same yaw).
-    // NOTE: no + Math.PI here — the model's front (see CharacterModel's
-    // face/eyes, built facing local +Z) already maps to this same
-    // (sin(yaw), cos(yaw)) world direction, i.e. the direction movement
-    // treats as "forward". Adding a flip here pointed the character's
-    // face backward relative to the way it actually walks.
     if (this.characterGroup) {
-      this.characterGroup.rotation.y = this.yaw;
+      this.characterGroup.rotation.y = this.yaw + Math.PI;
       this.characterGroup.visible = this.mode !== 'first';
     }
   }

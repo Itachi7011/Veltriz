@@ -89,8 +89,13 @@ const CharacterPreview3D = ({ appearance }) => {
         if (obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
           mats.forEach((m) => {
-            if (m.map) m.map.dispose();
-            m.dispose();
+            // Defensive: only dispose things that are actually disposable
+            // (a real Material/Texture) — anything else here is a bug
+            // elsewhere (e.g. a raw THREE.Color mistakenly used as a
+            // material), and cleanup should never let that bug take the
+            // whole page down.
+            if (m?.map && typeof m.map.dispose === 'function') m.map.dispose();
+            if (typeof m?.dispose === 'function') m.dispose();
           });
         }
       });

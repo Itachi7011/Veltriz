@@ -20,6 +20,12 @@ const CharacterSchema = new mongoose.Schema(
       hairStyle: { type: String, enum: ['short', 'buzz', 'long', 'ponytail', 'bald'], default: 'short' },
       pantsColor: { type: String, default: '#232842' },
       shoeColor: { type: String, default: '#171a26' },
+      // Which of the 5 head-shape archetypes (see CharacterModel.js's
+      // FACE_ARCHETYPES on the client) this character's face uses.
+      // Optional — if not set, the client derives a stable one from the
+      // rest of the appearance fields, so this only needs to be present
+      // once someone actually opens the face-shape picker.
+      faceType: { type: String, enum: ['oval', 'round', 'square', 'heart', 'long'] },
     },
 
     mapId: { type: String, default: 'delhi_cp_district' },

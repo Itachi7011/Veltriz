@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import gameEvents from '../gameEvents';
-import { buildCharacter, animateCharacter } from './CharacterModel';
+import { buildCharacter, animateCharacter, buildSkateboard, applySkateboardPose, applyCrimePose, applyPhonePose, clearPhonePose, applyGripPose } from './CharacterModel';
 import { buildWorld } from './WorldBuilder';
 import { buildStructure } from './BuildingBuilder';
 import { PhysicsController } from './PhysicsController';
 import { CameraRig } from './CameraRig';
 import { NpcSystem } from './NpcSystem';
 import { WeaponSystem, WEAPON_SLOTS } from './WeaponSystem';
+import { VehicleSystem } from './VehicleSystem';
+import { BillboardSystem } from './BillboardSystem';
+import { WorldEventSystem } from './WorldEventSystem';
+import { AudioSystem } from './AudioSystem';
 
 export const WORLD_SCALE = 0.08; // 1 map pixel -> 0.08 world units (~12.5px per meter)
 const MOVE_EMIT_INTERVAL_MS = 90;
@@ -30,6 +34,31 @@ const CRIME_LOCATIONS = {
   heist: { kind: 'building', types: ['bank', 'stock_exchange'] },
 };
 
+// A simple static "sitting, hands on the wheel/bars" pose, used instead
+// of the walk-cycle animation while driving.
+function applyDrivingPose(bones) {
+  bones.upperLegLeft.rotation.x = 1.35;
+  bones.upperLegRight.rotation.x = 1.35;
+  bones.lowerLegLeft.rotation.x = -1.15;
+  bones.lowerLegRight.rotation.x = -1.15;
+  bones.upperArmLeft.rotation.x = -0.95;
+  bones.upperArmRight.rotation.x = -0.95;
+  bones.forearmLeft.rotation.x = 0.35;
+  bones.forearmRight.rotation.x = 0.35;
+  bones.hips.rotation.y = 0;
+  bones.head.rotation.x = 0;
+  bones.neck.rotation.x = 0;
+  // Feet rest toe-down on the pegs/pedals, hands wrap around the
+  // wheel/handlebar grips — same reasoning as VehicleSystem's copy of
+  // this pose for other drivers.
+  if (bones.ankleLeft && bones.ankleRight) {
+    bones.ankleLeft.rotation.x = 0.3;
+    bones.ankleRight.rotation.x = 0.3;
+  }
+  applyGripPose(bones, 'Left', 0.9);
+  applyGripPose(bones, 'Right', 0.9);
+}
+
 function hashAppearanceFromId(id) {
   let h = 0;
   for (let i = 0; i < (id || 'x').length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
@@ -37,7 +66,10 @@ function hashAppearanceFromId(id) {
   const outfit = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4'][(h >> 3) % 6];
   const hair = ['#2b2b2b', '#5a3825', '#7a4a1e', '#c9c9c9', '#8b1e1e'][(h >> 6) % 5];
   const gender = h % 2 === 0 ? 'male' : 'female';
-  return { skinTone: skin, outfitColor: outfit, hairColor: hair, gender };
+  // faceSeed derived from the same hash, so a remote player with no
+  // saved appearance still gets a stable, distinct face (same id →
+  // same face every time) instead of everyone sharing the default look.
+  return { skinTone: skin, outfitColor: outfit, hairColor: hair, gender, faceSeed: h };
 }
 
 export default class GameEngine {
@@ -51,6 +83,7 @@ export default class GameEngine {
     this.paused = false;
     this.destroyed = false;
     this.currentBuildingType = null;
+    this.currentHouseId = null;
     this.remotePlayers = new Map();
     this.keys = {};
     this.lastEmitAt = 0;
@@ -63,7 +96,9 @@ export default class GameEngine {
     this._initPlayer();
     this._initPhysics();
     this._initNpcs();
+    this._initVehicles();
     this._initCamera();
+    this._initCivicSystems();
     this._initWeapons();
     this._initInput();
     this._wireSocket();
@@ -76,6 +111,14 @@ export default class GameEngine {
 
     this._onAlertPolice = () => this.alertPoliceNear();
     gameEvents.on('crime:alertPolice', this._onAlertPolice);
+
+    this.crimePoseStartedAt = 0;
+    this.crimePoseDurationMs = 0;
+    this._onCrimePerforming = ({ durationMs } = {}) => {
+      this.crimePoseStartedAt = performance.now();
+      this.crimePoseDurationMs = durationMs || 1800;
+    };
+    gameEvents.on('crime:performing', this._onCrimePerforming);
 
     gameEvents.emit('scene:ready');
   }
@@ -129,15 +172,15 @@ export default class GameEngine {
     this.houseEntries = [];
 
     (this.mapConfig.buildings || []).forEach((b) => {
-      const { group, footprint } = buildStructure(b, { scale: this.scale, zoneKey: b.zone, kind: 'building' });
+      const { group, footprint, doorHinge, gateHinge } = buildStructure(b, { scale: this.scale, zoneKey: b.zone, kind: 'building' });
       this.scene.add(group);
-      this.buildingEntries.push({ data: b, group, footprint });
+      this.buildingEntries.push({ data: b, group, footprint, doorHinge, gateHinge, doorOpen: 0, gateOpen: 0 });
     });
 
     (this.mapConfig.houses || []).forEach((h) => {
-      const { group, footprint } = buildStructure(h, { scale: this.scale, zoneKey: h.zone, kind: 'house' });
+      const { group, footprint, doorHinge, gateHinge } = buildStructure(h, { scale: this.scale, zoneKey: h.zone, kind: 'house' });
       this.scene.add(group);
-      this.houseEntries.push({ data: h, group, footprint });
+      this.houseEntries.push({ data: h, group, footprint, doorHinge, gateHinge, doorOpen: 0, gateOpen: 0 });
     });
   }
 
@@ -149,7 +192,20 @@ export default class GameEngine {
     this.scene.add(rig.group);
     this.playerRig = rig;
 
+    this.isSkateboarding = false;
+    this.skateboardProp = buildSkateboard();
+    this.skateboardProp.visible = false;
+    this.skateboardProp.position.y = 0.03;
+    this.playerRig.group.add(this.skateboardProp);
+
     this.nameplateEl = null; // nameplate handled by React HUD via minimap/HUD, not needed in-world
+  }
+
+  _toggleSkateboard() {
+    if (this.isDriving) return;
+    this.isSkateboarding = !this.isSkateboarding;
+    this.skateboardProp.visible = this.isSkateboarding;
+    gameEvents.emit('skateboard:update', this.isSkateboarding);
   }
 
   // ------------------------------------------------------------ PHYSICS
@@ -172,6 +228,62 @@ export default class GameEngine {
     this._bustedAt = 0;
   }
 
+  // ------------------------------------------------------------- VEHICLES
+  _initVehicles() {
+    this.vehicleSystem = new VehicleSystem({
+      scene: this.scene,
+      mapConfig: this.mapConfig,
+      scale: this.scale,
+      colliders: this.physics.getColliders(),
+    });
+    this.isDriving = false;
+    this.currentVehicleNearby = null;
+  }
+
+  // -------------------------------------------------------------- CIVIC
+  _initCivicSystems() {
+    this.billboardSystem = new BillboardSystem({ buildingEntries: this.buildingEntries });
+    this.worldEventSystem = new WorldEventSystem({
+      npcSystem: this.npcSystem,
+      buildingEntries: this.buildingEntries,
+      scale: this.scale,
+    });
+    this.audio = new AudioSystem();
+    this.isUsingPhone = false;
+
+    this._onPoliticsStart = ({ type }) => {
+      const pos = this.physics.getPosition();
+      const started = this.worldEventSystem.start(type, pos.x, pos.z);
+      if (!started) {
+        gameEvents.emit('subtitle:show', { name: 'System', text: 'Nobody is around here to gather.' });
+      }
+    };
+    gameEvents.on('politics:start', this._onPoliticsStart);
+
+    this._onAudioMuteToggle = (muted) => this.audio.setMuted(muted);
+    gameEvents.on('audio:setMuted', this._onAudioMuteToggle);
+  }
+
+  openPhone() {
+    if (this.isDriving || this.isUsingPhone) return;
+    this.isUsingPhone = true;
+    applyPhonePose(this.playerRig.bones);
+    gameEvents.emit('phone:toggle', true);
+  }
+
+  closePhone() {
+    if (!this.isUsingPhone) return;
+    this.isUsingPhone = false;
+    clearPhonePose(this.playerRig.bones);
+    // If a weapon is equipped, re-apply its grip curl — closePhone
+    // relaxes the right hand for the phone, which would otherwise leave
+    // an equipped weapon looking like it's floating in an open palm.
+    if (this.weaponSystem && this.weaponSystem.currentKey && this.weaponSystem.currentKey !== 'unarmed') {
+      applyGripPose(this.playerRig.bones, 'Right', 1);
+    }
+    gameEvents.emit('phone:toggle', false);
+  }
+
   // ------------------------------------------------------------- CAMERA
   _initCamera() {
     this.cameraRig = new CameraRig({
@@ -191,6 +303,7 @@ export default class GameEngine {
       bones: this.playerRig.bones,
       npcSystem: this.npcSystem,
       playerHeightGetter: () => this.physics.getPosition().y,
+      audio: this.audio,
     });
   }
 
@@ -207,6 +320,21 @@ export default class GameEngine {
       if (e.code === 'KeyR') {
         this.weaponSystem.startReload();
       }
+      if (e.code === 'KeyF') {
+        this._toggleVehicle();
+      }
+      if (e.code === 'KeyQ') {
+        this._toggleSkateboard();
+      }
+      if (e.code === 'KeyG' && !this.isDriving) {
+        gameEvents.emit('ui:openPolitics');
+      }
+      if (e.code === 'KeyP') {
+        this.openPhone();
+      }
+      if (e.code === 'KeyH' && this.isDriving) {
+        this.audio?.playHorn();
+      }
       const slotIndex = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(e.code);
       if (slotIndex !== -1 && WEAPON_SLOTS[slotIndex]) {
         this.weaponSystem.equip(WEAPON_SLOTS[slotIndex]);
@@ -222,6 +350,7 @@ export default class GameEngine {
     // so the very first click — which just requests pointer lock — never
     // also counts as a shot), right click aims/scopes while held.
     this._onMouseDown = (e) => {
+      this.audio?.ensureStarted();
       if (!this.inputEnabled) return;
       const locked = document.pointerLockElement === this.renderer.domElement;
       if (!locked) return;
@@ -327,14 +456,22 @@ export default class GameEngine {
       this._updateMovement(dt, now);
       this._updateRemoteInterpolation();
       this._updateCulling(now);
-      this._updateBuildingProximity();
-      this._updateCrimeProximity();
+      if (!this.isDriving) {
+        this._updateBuildingProximity();
+        this._updateHouseProximity();
+        this._updateCrimeProximity();
+      }
+      this._updateVehicleProximity();
 
-      const pos = this.physics.getPosition();
+      const pos = this._getEffectivePosition();
       this.npcSystem.update(dt, { x: pos.x, z: pos.z }, now);
+      this.vehicleSystem.update(dt, { x: pos.x, z: pos.z }, now);
+      this.worldEventSystem.update(dt, now);
+      this.worldEventSystem.maybeAutoStart(now, this._computeMarketTrend());
+      this.billboardSystem.update(dt, now);
       this._checkBusted(pos, now);
-      this.cameraRig.update({ x: pos.x, y: pos.y, z: pos.z }, this._nearbyCollidables || []);
       this._updateWeapon(dt, pos);
+      this._updateDoorsAndGates(pos, dt);
     } catch (err) {
       // A logic error in movement/culling/camera should never prevent the
       // frame from being drawn — surfacing a black screen with silent,
@@ -350,19 +487,29 @@ export default class GameEngine {
   }
 
   _updateMovement(dt, now) {
+    if (this.isDriving) {
+      this._updateDriving(dt, now);
+      return;
+    }
+
     const forward = (this.keys.KeyW || this.keys.ArrowUp ? 1 : 0) - (this.keys.KeyS || this.keys.ArrowDown ? 1 : 0);
     const strafe = (this.keys.KeyD || this.keys.ArrowRight ? 1 : 0) - (this.keys.KeyA || this.keys.ArrowLeft ? 1 : 0);
     const running = !!this.keys.ShiftLeft || !!this.keys.ShiftRight;
     const jumpPressed = !!this.keys.Space;
+    const performingCrime = performance.now() - this.crimePoseStartedAt < this.crimePoseDurationMs;
 
     this.physics.update(dt, {
-      forward,
-      strafe,
+      forward: performingCrime ? 0 : forward,
+      strafe: performingCrime ? 0 : strafe,
       facingYaw: this.cameraRig.facingYaw,
       running,
-      jumpPressed,
+      jumpPressed: performingCrime ? false : jumpPressed,
+      skateboarding: this.isSkateboarding,
     });
-    if (this.keys.Space) this.keys.Space = false; // single jump per press
+    if (this.keys.Space) {
+      this.keys.Space = false; // single jump per press
+      if (jumpPressed && !performingCrime) this.audio?.playJump();
+    }
 
     const pos = this.physics.getPosition();
     // The controller's y is already the feet/ground-relative height (0 =
@@ -371,13 +518,31 @@ export default class GameEngine {
     this.playerRig.group.position.set(pos.x, pos.y, pos.z);
 
     const speedMag = Math.hypot(this.physics.velocity.x, this.physics.velocity.z);
-    const speedFactor = Math.min(1, speedMag / 6.6);
-    animateCharacter(this.playerRig.bones, {
-      time: now / 1000,
-      speedFactor,
-      headPitch: this.cameraRig.mode === 'first' ? 0 : this.cameraRig.pitch,
-      isGrounded: this.physics.isGrounded,
-    });
+    if (speedMag > 1 && this.physics.isGrounded) {
+      this._footstepTimer = (this._footstepTimer || 0) + dt;
+      const interval = Math.max(0.2, 0.55 - speedMag * 0.015);
+      if (this._footstepTimer > interval) {
+        this._footstepTimer = 0;
+        this.audio?.playFootstep();
+      }
+    }
+    const crimePoseElapsed = performance.now() - this.crimePoseStartedAt;
+    if (crimePoseElapsed >= 0 && crimePoseElapsed < this.crimePoseDurationMs) {
+      applyCrimePose(this.playerRig.bones, crimePoseElapsed / this.crimePoseDurationMs);
+    } else if (this.isSkateboarding) {
+      const speedFactor = Math.min(1, speedMag / 20);
+      applySkateboardPose(this.playerRig.bones, { time: now / 1000, speedFactor });
+    } else {
+      const speedFactor = Math.min(1, speedMag / 15);
+      animateCharacter(this.playerRig.bones, {
+        time: now / 1000,
+        speedFactor,
+        headPitch: this.cameraRig.mode === 'first' ? 0 : this.cameraRig.pitch,
+        isGrounded: this.physics.isGrounded,
+      });
+    }
+
+    this.cameraRig.update({ x: pos.x, y: pos.y, z: pos.z }, this._nearbyCollidables || []);
 
     // Multiplayer emit
     if (this.socket && speedMag > 0.05 && now - this.lastEmitAt > MOVE_EMIT_INTERVAL_MS) {
@@ -403,6 +568,161 @@ export default class GameEngine {
     }
   }
 
+  // ------------------------------------------------------------ DRIVING
+  _toggleVehicle() {
+    if (this.isDriving) {
+      const exitSpot = this.vehicleSystem.exit();
+      this.isDriving = false;
+      if (exitSpot) {
+        this.physics.setSpawn(exitSpot.x, exitSpot.z);
+        this.playerRig.group.rotation.y = exitSpot.heading + Math.PI;
+      }
+      // Hands were curled around the wheel/handlebar for the drive —
+      // relax them back to a normal open/resting hand on foot, unless a
+      // weapon is currently equipped, in which case keep gripping it.
+      const stillArmed = this.weaponSystem && this.weaponSystem.currentKey && this.weaponSystem.currentKey !== 'unarmed';
+      applyGripPose(this.playerRig.bones, 'Left', 0);
+      applyGripPose(this.playerRig.bones, 'Right', stillArmed ? 1 : 0);
+      gameEvents.emit('vehicle:update', null);
+      return;
+    }
+
+    const pos = this.physics.getPosition();
+    const nearby = this.vehicleSystem.getNearestEnterable(pos);
+    if (nearby) {
+      this.vehicleSystem.enter(nearby);
+      this.isDriving = true;
+    } else {
+      const jackable = this.vehicleSystem.getNearestJackable(pos);
+      if (!jackable) return;
+      // Forcing an occupied vehicle to stop and taking it is a
+      // carjacking, not just "finding a car" — same distinction the
+      // reference game makes, and it plugs into the same heat/police
+      // consequence the crime system already uses.
+      this.vehicleSystem.carjack(jackable);
+      this.isDriving = true;
+      gameEvents.emit('crime:alertPolice');
+    }
+    if (this.isSkateboarding) {
+      this.isSkateboarding = false;
+      this.skateboardProp.visible = false;
+      gameEvents.emit('skateboard:update', false);
+    }
+
+    // Clear any on-foot interaction prompts (building/house/crime) so they
+    // don't stay stuck on screen while driving away from them.
+    if (this.currentBuildingType) {
+      gameEvents.emit('building:leave', { type: this.currentBuildingType });
+      this.currentBuildingType = null;
+    }
+    if (this.currentHouseId) {
+      gameEvents.emit('house:leave', { id: this.currentHouseId });
+      this.currentHouseId = null;
+    }
+    if (this.currentCrimeOpportunity) {
+      this.currentCrimeOpportunity = null;
+      gameEvents.emit('crime:opportunity', null);
+    }
+  }
+
+  _updateVehicleProximity() {
+    if (this.isDriving) {
+      gameEvents.emit('vehicle:nearby', null);
+      return;
+    }
+    const pos = this.physics.getPosition();
+    const nearby = this.vehicleSystem.getNearestEnterable(pos);
+    if (nearby) {
+      if (this._lastVehicleNearbyLabel !== nearby.def.name || this._lastVehicleNearbyMode !== 'enter') {
+        this._lastVehicleNearbyLabel = nearby.def.name;
+        this._lastVehicleNearbyMode = 'enter';
+        gameEvents.emit('vehicle:nearby', { name: nearby.def.name, mode: 'enter' });
+      }
+      return;
+    }
+    const jackable = this.vehicleSystem.getNearestJackable(pos);
+    if (jackable) {
+      if (this._lastVehicleNearbyLabel !== jackable.def.name || this._lastVehicleNearbyMode !== 'jack') {
+        this._lastVehicleNearbyLabel = jackable.def.name;
+        this._lastVehicleNearbyMode = 'jack';
+        gameEvents.emit('vehicle:nearby', { name: jackable.def.name, mode: 'jack' });
+      }
+      return;
+    }
+    if (this._lastVehicleNearbyLabel !== null) {
+      this._lastVehicleNearbyLabel = null;
+      this._lastVehicleNearbyMode = null;
+      gameEvents.emit('vehicle:nearby', null);
+    }
+  }
+
+  _updateDriving(dt, now) {
+    const entry = this.vehicleSystem.drivenEntry;
+    if (!entry) {
+      this.isDriving = false;
+      return;
+    }
+
+    const throttle = (this.keys.KeyW || this.keys.ArrowUp ? 1 : 0) - (this.keys.KeyS || this.keys.ArrowDown ? 1 : 0);
+    // NOTE: with this game's heading convention (dx=sin(heading),
+    // dz=cos(heading), same as CameraRig/PhysicsController), *increasing*
+    // heading turns the vehicle to its LEFT, not its right — verified
+    // numerically against PhysicsController's already-fixed strafe basis
+    // (see that file's comment). So Left/A must be the input that
+    // *increases* steer, and Right/D must *decrease* it, for the vehicle
+    // to actually turn toward the side the player pressed. This was
+    // previously inverted (D/Right turned the vehicle left, A/Left turned
+    // it right) — fixed here.
+    const steer = (this.keys.KeyA || this.keys.ArrowLeft ? 1 : 0) - (this.keys.KeyD || this.keys.ArrowRight ? 1 : 0);
+    const handbrake = !!this.keys.Space;
+
+    entry.controller.update(dt, { throttle, steer, handbrake });
+    const t = entry.controller.getTransform();
+
+    this._engineTickTimer = (this._engineTickTimer || 0) + dt;
+    if (this._engineTickTimer > 0.4) {
+      this._engineTickTimer = 0;
+      this.audio?.playEngineTick(Math.min(1, Math.abs(t.speed) / entry.controller.tuning.maxSpeed));
+    }
+
+    // Sit the player rig at the vehicle rather than hiding it entirely —
+    // the on-foot physics body is left exactly where it was parked and
+    // gets restored on exit, this is purely visual.
+    this.playerRig.group.position.set(t.x, t.y + entry.seatHeight, t.z);
+    this.playerRig.group.visible = true;
+    applyDrivingPose(this.playerRig.bones);
+
+    // Camera keeps its normal free-look (mouse yaw/pitch), just orbiting
+    // the vehicle's position instead of the on-foot physics position —
+    // this is what lets you look around / drive-by shoot while driving
+    // in a straight line, same as the reference game.
+    this.cameraRig.update({ x: t.x, y: t.y + entry.seatHeight, z: t.z }, this._nearbyCollidables || []);
+    // cameraRig.update() just pointed the character rig at the mouse's
+    // free-look yaw (correct for on-foot) — override with the vehicle's
+    // OWN heading instead, so free-looking around doesn't spin the car.
+    this.playerRig.group.rotation.y = t.heading + Math.PI;
+
+    if (this.socket && Math.abs(t.speed) > 0.1 && now - this.lastEmitAt > MOVE_EMIT_INTERVAL_MS) {
+      this.lastEmitAt = now;
+      this.socket.emit('player:move', { x: t.x / this.scale, y: t.z / this.scale, vx: 0, vz: 0, facing: 'down' });
+    }
+
+    if (now - this.lastMinimapEmitAt > MINIMAP_EMIT_INTERVAL_MS) {
+      this.lastMinimapEmitAt = now;
+      gameEvents.emit('minimap:update', {
+        self: { x: t.x / this.scale, y: t.z / this.scale, facing: this.cameraRig.facingYaw },
+        others: Array.from(this.remotePlayers.values()).map((e) => ({ x: e.targetX / this.scale, y: e.targetZ / this.scale })),
+      });
+    }
+
+    gameEvents.emit('vehicle:update', {
+      name: entry.def.name,
+      kind: entry.kind,
+      speedKmh: Math.round(Math.abs(t.speed) * 3.6),
+      reversing: t.speed < -0.1,
+    });
+  }
+
   _updateRemoteInterpolation() {
     this.remotePlayers.forEach((entry) => {
       const g = entry.rig.group;
@@ -420,10 +740,18 @@ export default class GameEngine {
     });
   }
 
+  /** Vehicle position while driving, on-foot physics position otherwise — used anywhere "where is the player" matters (culling, NPC streaming, minimap, etc). */
+  _getEffectivePosition() {
+    if (this.isDriving && this.vehicleSystem.drivenEntry) {
+      return this.vehicleSystem.drivenEntry.controller.getTransform();
+    }
+    return this.physics.getPosition();
+  }
+
   _updateCulling(now) {
     if (now - this.lastCullAt < CULL_TICK_MS) return;
     this.lastCullAt = now;
-    const pos = this.physics.getPosition();
+    const pos = this._getEffectivePosition();
 
     this.houseEntries.forEach((entry) => {
       const d = Math.hypot(entry.footprint.x - pos.x, entry.footprint.z - pos.z);
@@ -442,11 +770,48 @@ export default class GameEngine {
       .map((e) => e.group);
 
     this.npcSystem.applyCulling(pos, HOUSE_RENDER_DIST);
+    this.vehicleSystem.applyCulling(pos, BUILDING_RENDER_DIST);
 
     // Keep the sun's shadow frustum centered near the player so shadows
     // stay sharp anywhere across a 60,000+ pixel-wide map.
     this.sun.position.set(pos.x + 40, pos.y + 70, pos.z + 20);
     this.sunTarget.position.set(pos.x, pos.y, pos.z);
+  }
+
+  /**
+   * Swings each building's front door — and each house's yard gate —
+   * open as the player nears it, and eases them back closed as they
+   * leave. Purely visual (see addFenceAndGate/doorHinge in
+   * BuildingBuilder.js: neither is a physics collider), driven off the
+   * same footprint data every other proximity check already uses, so it
+   * can't desync from or interfere with the existing building/crime
+   * interaction prompts.
+   */
+  _updateDoorsAndGates(pos, dt) {
+    const DOOR_OPEN_DIST = 3.2;
+    const GATE_OPEN_DIST = 5.5;
+    const DOOR_OPEN_ANGLE = -1.75; // ~100°, swings inward
+    const GATE_OPEN_ANGLE = -1.9; // ~109°, swings inward off the path
+    const SWING_SPEED = 3.2; // rad/s-ish ease rate
+
+    const animateHinge = (hinge, openTarget, angle) => {
+      const target = openTarget ? angle : 0;
+      hinge.rotation.y += (target - hinge.rotation.y) * Math.min(1, dt * SWING_SPEED);
+    };
+
+    [...this.buildingEntries, ...this.houseEntries].forEach((entry) => {
+      if (!entry.doorHinge && !entry.gateHinge) return;
+      // Skip anything not currently rendered (culled far away) — no
+      // point animating a hinge nobody can see, and this keeps the cost
+      // of this pass tied to the already-culled visible set.
+      if (!entry.group.visible) return;
+
+      const fp = entry.footprint;
+      const d = Math.hypot(fp.x - pos.x, fp.z - pos.z);
+
+      if (entry.doorHinge) animateHinge(entry.doorHinge, d < DOOR_OPEN_DIST + fp.halfD, DOOR_OPEN_ANGLE);
+      if (entry.gateHinge) animateHinge(entry.gateHinge, d < GATE_OPEN_DIST + fp.halfD, GATE_OPEN_ANGLE);
+    });
   }
 
   _updateBuildingProximity() {
@@ -473,6 +838,39 @@ export default class GameEngine {
     }
   }
 
+  /**
+   * Same proximity pattern as _updateBuildingProximity above, but for the
+   * 100+ individually-owned houses (houseEntries) rather than the shared
+   * building types — each one is identified by its own id/name (see
+   * house:enter's payload) since, unlike a building `type`, there's no
+   * single shared UI panel keyed by type for these; GamePage opens
+   * HousePanel with whichever house id/name it's given.
+   */
+  _updateHouseProximity() {
+    const pos = this.physics.getPosition();
+    let nearest = null;
+    let nearestDist = Infinity;
+    this.houseEntries.forEach((entry) => {
+      const fp = entry.footprint;
+      const withinX = Math.abs(pos.x - fp.x) < fp.halfW + 2.2;
+      const withinZ = Math.abs(pos.z - fp.z) < fp.halfD + 2.2;
+      if (withinX && withinZ) {
+        const d = Math.hypot(fp.x - pos.x, fp.z - pos.z);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = entry.data;
+        }
+      }
+    });
+
+    const nearestId = nearest ? nearest.id : null;
+    if (nearestId !== this.currentHouseId) {
+      if (this.currentHouseId) gameEvents.emit('house:leave', { id: this.currentHouseId });
+      this.currentHouseId = nearestId;
+      if (nearest) gameEvents.emit('house:enter', { id: nearest.id, name: nearest.name });
+    }
+  }
+
   // ---------------------------------------------------------------- WEAPON
   _updateWeapon(dt, pos) {
     this.weaponSystem.update(dt);
@@ -486,6 +884,14 @@ export default class GameEngine {
     } else {
       this._fireHandledForThisPress = false;
     }
+  }
+
+  /** @returns {number|null} average % change of stock-category items right now, or null if no data yet */
+  _computeMarketTrend() {
+    const items = this.billboardSystem?.marketItems?.filter((i) => i.category === 'stock');
+    if (!items || !items.length) return null;
+    const changes = items.map((i) => ((i.currentPrice - i.previousPrice) / i.previousPrice) * 100);
+    return changes.reduce((a, b) => a + b, 0) / changes.length;
   }
 
   // ----------------------------------------------------------- CRIME
@@ -546,6 +952,7 @@ export default class GameEngine {
       this._bustedAt = now;
       this.npcSystem.alertedUntil = 0;
       gameEvents.emit('crime:busted');
+      this.audio?.playBusted();
     }
   }
 
@@ -591,19 +998,28 @@ export default class GameEngine {
       this.socket.off('player:left', this._onLeft);
     }
     gameEvents.off('crime:alertPolice', this._onAlertPolice);
+    gameEvents.off('crime:performing', this._onCrimePerforming);
+    gameEvents.off('politics:start', this._onPoliticsStart);
+    gameEvents.off('audio:setMuted', this._onAudioMuteToggle);
 
     this.cameraRig?.dispose();
     this.physics?.dispose();
     this.npcSystem?.dispose();
     this.weaponSystem?.dispose();
+    this.vehicleSystem?.dispose();
+    this.billboardSystem?.dispose();
+    this.worldEventSystem?.dispose();
+    this.audio?.dispose();
 
     this.scene.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         mats.forEach((m) => {
-          if (m.map) m.map.dispose();
-          m.dispose();
+          // Defensive: only dispose things that are actually disposable —
+          // see the matching comment in CharacterPreview3D.jsx.
+          if (m?.map && typeof m.map.dispose === 'function') m.map.dispose();
+          if (typeof m?.dispose === 'function') m.dispose();
         });
       }
     });

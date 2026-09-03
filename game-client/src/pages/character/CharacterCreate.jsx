@@ -6,7 +6,7 @@ import { ThemeContext } from '../../context/ThemeContext';
 import { useCharacter } from '../../context/CharacterContext';
 import http from '../../lib/httpClient';
 import CharacterPreview3D from './CharacterPreview3D';
-import { SKIN_TONES, OUTFIT_COLORS, HAIR_COLORS, HAIR_STYLES } from '../game/engine/CharacterModel';
+import { SKIN_TONES, OUTFIT_COLORS, HAIR_COLORS, HAIR_STYLES, FACE_ARCHETYPES, FACE_ARCHETYPE_LABELS } from '../game/engine/CharacterModel';
 import './CharacterCreate.css';
 
 const BACKGROUNDS = [
@@ -62,6 +62,7 @@ const CharacterCreate = () => {
     outfitColor: OUTFIT_COLORS[0],
     hairColor: HAIR_COLORS[0],
     hairStyle: 'short',
+    faceType: FACE_ARCHETYPES[0],
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -241,6 +242,22 @@ const CharacterCreate = () => {
                         onClick={() => setAppearance((a) => ({ ...a, skinTone: color }))}
                         aria-label={`Skin tone ${color}`}
                       />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="veltriz-charcreate-swatch-label">Face shape</span>
+                  <div className="veltriz-charcreate-option-row">
+                    {FACE_ARCHETYPES.map((type) => (
+                      <button
+                        type="button"
+                        key={type}
+                        className={`veltriz-charcreate-option ${appearance.faceType === type ? 'selected' : ''}`}
+                        onClick={() => setAppearance((a) => ({ ...a, faceType: type }))}
+                      >
+                        {FACE_ARCHETYPE_LABELS[type]}
+                      </button>
                     ))}
                   </div>
                 </div>

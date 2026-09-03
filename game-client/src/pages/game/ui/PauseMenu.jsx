@@ -1,7 +1,16 @@
-import React from 'react';
-import { Play, LogOut, Volume2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, LogOut, Volume2, VolumeX } from 'lucide-react';
+import gameEvents from '../gameEvents';
 
 const PauseMenu = ({ onResume, onExit }) => {
+  const [muted, setMuted] = useState(false);
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    gameEvents.emit('audio:setMuted', next);
+  };
+
   return (
     <div className="veltriz-game-panel-backdrop">
       <div className="veltriz-game-pause-menu">
@@ -9,8 +18,8 @@ const PauseMenu = ({ onResume, onExit }) => {
         <button className="veltriz-game-pause-btn primary" onClick={onResume}>
           <Play size={16} /> Resume
         </button>
-        <button className="veltriz-game-pause-btn" disabled>
-          <Volume2 size={16} /> Settings (coming soon)
+        <button className="veltriz-game-pause-btn" onClick={toggleMute}>
+          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />} {muted ? 'Unmute audio' : 'Mute audio'}
         </button>
         <button className="veltriz-game-pause-btn danger" onClick={onExit}>
           <LogOut size={16} /> Exit to main menu

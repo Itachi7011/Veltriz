@@ -18,6 +18,7 @@ const createCharacterSchema = z.object({
       hairStyle: z.enum(['short', 'buzz', 'long', 'ponytail', 'bald']).optional(),
       pantsColor: z.string().optional(),
       shoeColor: z.string().optional(),
+      faceType: z.enum(['oval', 'round', 'square', 'heart', 'long']).optional(),
     })
     .optional(),
 });

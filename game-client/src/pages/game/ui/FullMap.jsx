@@ -3,10 +3,100 @@ import { X } from 'lucide-react';
 import gameEvents from '../gameEvents';
 import { BUILDING_COLORS, DEFAULT_BUILDING_COLOR, ZONE_MAP_COLORS, zoneForX } from './mapColors';
 
-const PANEL_MAX_WIDTH = 780;
-const PANEL_MAX_HEIGHT = 500;
-const OVERVIEW_WIDTH = 780;
-const OVERVIEW_HEIGHT = 260;
+const EVENT_COLORS = {
+  rally: '#38bdf8',
+  gathering: '#38bdf8',
+  food_distribution: '#22c55e',
+  political_clash: '#f97316',
+  gang_war: '#ef4444',
+  economic_distress: '#eab308',
+};
+
+const PANEL_MAX_WIDTH = 1040;
+const PANEL_MAX_HEIGHT = 640;
+const OVERVIEW_WIDTH = 1040;
+const OVERVIEW_HEIGHT = 320;
+
+// Distinct silhouette per building category — so two buildings of
+// different types are never just "a different colored square", they're a
+// different shape too (a bank reads as a diamond, a park as a leaf/circle,
+// a factory as a hexagon, etc.), while every building of the SAME type
+// still renders identically everywhere it appears.
+const CATEGORY_SHAPE = {
+  civic: 'pentagon',
+  finance: 'diamond',
+  shop: 'square',
+  leisure: 'circle',
+  industrial: 'hexagon',
+  nature: 'triangle',
+  maritime: 'boat',
+  home: 'house',
+};
+
+const TYPE_CATEGORY = {
+  city_hall: 'civic', courthouse: 'civic', government_complex: 'civic', police_station: 'civic',
+  embassy: 'civic', university: 'civic', school: 'civic', job_center: 'civic',
+  bank: 'finance', stock_exchange: 'finance', credit_union: 'finance', insurance_office: 'finance',
+  real_estate: 'finance', lottery: 'finance',
+  market: 'shop', boutique: 'shop', electronics: 'shop', jeweler: 'shop', hardware_store: 'shop',
+  trading_post: 'shop', vehicle_dealer: 'shop', gun_store: 'shop', pearl_exchange: 'shop',
+  restaurant: 'leisure', cinema: 'leisure', casino: 'leisure', gym: 'leisure', hospital: 'leisure',
+  factory: 'industrial', tech_campus: 'industrial', quantum_labs: 'industrial', logistics_hub: 'industrial',
+  oil_rig: 'industrial', marine_research: 'industrial', port_authority: 'industrial',
+  park: 'nature', farm: 'nature',
+  marina: 'maritime', fish_market: 'maritime', fishing_wharf: 'maritime', smugglers_den: 'maritime',
+  home: 'home',
+};
+
+const shapeFor = (type) => CATEGORY_SHAPE[TYPE_CATEGORY[type]] || 'square';
+
+/** Renders one of a small set of recognizable silhouettes at (cx,cy). */
+const BuildingGlyph = ({ cx, cy, size, color, shape }) => {
+  const s = size;
+  const fillProps = { fill: color, stroke: '#0a0c14', strokeWidth: 1 };
+  switch (shape) {
+    case 'diamond':
+      return <polygon points={`${cx},${cy - s} ${cx + s},${cy} ${cx},${cy + s} ${cx - s},${cy}`} {...fillProps} />;
+    case 'pentagon': {
+      const pts = [0, 1, 2, 3, 4]
+        .map((i) => {
+          const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+          return `${cx + Math.cos(a) * s},${cy + Math.sin(a) * s}`;
+        })
+        .join(' ');
+      return <polygon points={pts} {...fillProps} />;
+    }
+    case 'hexagon': {
+      const pts = [0, 1, 2, 3, 4, 5]
+        .map((i) => {
+          const a = (Math.PI * 2 * i) / 6;
+          return `${cx + Math.cos(a) * s},${cy + Math.sin(a) * s}`;
+        })
+        .join(' ');
+      return <polygon points={pts} {...fillProps} />;
+    }
+    case 'triangle':
+      return <polygon points={`${cx},${cy - s} ${cx + s},${cy + s * 0.8} ${cx - s},${cy + s * 0.8}`} {...fillProps} />;
+    case 'circle':
+      return <circle cx={cx} cy={cy} r={s} {...fillProps} />;
+    case 'boat':
+      return (
+        <polygon
+          points={`${cx - s},${cy - s * 0.3} ${cx + s},${cy - s * 0.3} ${cx + s * 0.6},${cy + s} ${cx - s * 0.6},${cy + s}`}
+          {...fillProps}
+        />
+      );
+    case 'house':
+      return (
+        <g>
+          <rect x={cx - s * 0.75} y={cy - s * 0.3} width={s * 1.5} height={s * 1.1} {...fillProps} />
+          <polygon points={`${cx - s},${cy - s * 0.3} ${cx},${cy - s * 1.15} ${cx + s},${cy - s * 0.3}`} {...fillProps} />
+        </g>
+      );
+    default:
+      return <rect x={cx - s} y={cy - s} width={s * 2} height={s * 2} rx={s * 0.25} {...fillProps} />;
+  }
+};
 
 const LEGEND_ENTRIES = [
   ['home', 'Home'],
@@ -45,14 +135,20 @@ const FullMap = ({ mapConfig, onClose }) => {
   const [self, setSelf] = useState(null);
   const [others, setOthers] = useState([]);
   const [activeZoneKey, setActiveZoneKey] = useState(null);
+  const [worldEvent, setWorldEvent] = useState(null);
 
   useEffect(() => {
     const onUpdate = ({ self: s, others: o }) => {
       setSelf(s);
       setOthers(o);
     };
+    const onEvent = (ev) => setWorldEvent(ev);
     gameEvents.on('minimap:update', onUpdate);
-    return () => gameEvents.off('minimap:update', onUpdate);
+    gameEvents.on('worldevent:active', onEvent);
+    return () => {
+      gameEvents.off('minimap:update', onUpdate);
+      gameEvents.off('worldevent:active', onEvent);
+    };
   }, []);
 
   const zones = mapConfig.zones || [{ key: 'default', name: mapConfig.name || 'Veltriz City', minX: 0, maxX: mapConfig.width }];
@@ -86,7 +182,7 @@ const FullMap = ({ mapConfig, onClose }) => {
 
   return (
     <div className="veltriz-game-panel-backdrop" onClick={onClose}>
-      <div className="veltriz-game-panel veltriz-game-panel-wide" onClick={(e) => e.stopPropagation()}>
+      <div className="veltriz-game-panel veltriz-game-panel-wide veltriz-game-fullmap-panel" onClick={(e) => e.stopPropagation()}>
         <div className="veltriz-game-panel-header">
           <h2>{mapConfig.name || 'Map'}</h2>
           <button className="veltriz-game-panel-x" onClick={onClose} aria-label="Close map (M or Esc)">
@@ -116,7 +212,7 @@ const FullMap = ({ mapConfig, onClose }) => {
         </div>
 
         {isOverview ? (
-          <OverviewMap mapConfig={mapConfig} zones={zones} self={self} others={others} />
+          <OverviewMap mapConfig={mapConfig} zones={zones} self={self} others={others} worldEvent={worldEvent} />
         ) : (
           activeZone &&
           layout && (
@@ -142,19 +238,16 @@ const FullMap = ({ mapConfig, onClose }) => {
                 .filter((b) => b.zone === activeZone.key)
                 .map((b) => (
                   <g key={b.id}>
-                    <rect
-                      x={(b.x - layout.minX) * layout.scaleX - 7}
-                      y={b.y * layout.scaleY - 7}
-                      width={14}
-                      height={14}
-                      fill={BUILDING_COLORS[b.type] || DEFAULT_BUILDING_COLOR}
-                      stroke="#0a0c14"
-                      strokeWidth={1}
-                      rx={3}
+                    <BuildingGlyph
+                      cx={(b.x - layout.minX) * layout.scaleX}
+                      cy={b.y * layout.scaleY}
+                      size={9}
+                      color={BUILDING_COLORS[b.type] || DEFAULT_BUILDING_COLOR}
+                      shape={shapeFor(b.type)}
                     />
                     <text
                       x={(b.x - layout.minX) * layout.scaleX}
-                      y={b.y * layout.scaleY + 22}
+                      y={b.y * layout.scaleY + 24}
                       fill="#eef0ff"
                       fontSize="10"
                       textAnchor="middle"
@@ -179,14 +272,53 @@ const FullMap = ({ mapConfig, onClose }) => {
                 ))}
 
               {self && zoneForX(zones, self.x)?.key === activeZone.key && (
-                <circle
-                  cx={(self.x - layout.minX) * layout.scaleX}
-                  cy={self.y * layout.scaleY}
-                  r={6}
-                  fill="#ffd76a"
-                  stroke="#fff"
-                  strokeWidth={1.4}
-                />
+                <g>
+                  <circle
+                    cx={(self.x - layout.minX) * layout.scaleX}
+                    cy={self.y * layout.scaleY}
+                    r={12}
+                    fill="#ffd76a"
+                    opacity={0.3}
+                  />
+                  <circle
+                    cx={(self.x - layout.minX) * layout.scaleX}
+                    cy={self.y * layout.scaleY}
+                    r={7}
+                    fill="#ffd76a"
+                    stroke="#fff"
+                    strokeWidth={1.8}
+                  />
+                </g>
+              )}
+
+              {worldEvent && zoneForX(zones, worldEvent.x)?.key === activeZone.key && (
+                <g>
+                  <circle
+                    cx={(worldEvent.x - layout.minX) * layout.scaleX}
+                    cy={worldEvent.z * layout.scaleY}
+                    r={16}
+                    fill={EVENT_COLORS[worldEvent.type] || '#f97316'}
+                    opacity={0.28}
+                  />
+                  <circle
+                    cx={(worldEvent.x - layout.minX) * layout.scaleX}
+                    cy={worldEvent.z * layout.scaleY}
+                    r={7}
+                    fill={EVENT_COLORS[worldEvent.type] || '#f97316'}
+                    stroke="#fff"
+                    strokeWidth={1.6}
+                  />
+                  <text
+                    x={(worldEvent.x - layout.minX) * layout.scaleX}
+                    y={worldEvent.z * layout.scaleY - 20}
+                    fill="#f8fafc"
+                    fontSize="12"
+                    fontWeight="700"
+                    textAnchor="middle"
+                  >
+                    {worldEvent.label}
+                  </text>
+                </g>
               )}
             </svg>
           )
@@ -216,7 +348,7 @@ const FullMap = ({ mapConfig, onClose }) => {
  * they're the majority of the visual noise and are already visible in
  * each zone's own tab).
  */
-const OverviewMap = ({ mapConfig, zones, self, others }) => {
+const OverviewMap = ({ mapConfig, zones, self, others, worldEvent }) => {
   const scaleX = OVERVIEW_WIDTH / mapConfig.width;
   const scaleY = OVERVIEW_HEIGHT / mapConfig.height;
 
@@ -249,14 +381,13 @@ const OverviewMap = ({ mapConfig, zones, self, others }) => {
       })}
 
       {(mapConfig.buildings || []).map((b) => (
-        <rect
+        <BuildingGlyph
           key={b.id}
-          x={b.x * scaleX - 2.5}
-          y={b.y * scaleY - 2.5}
-          width={5}
-          height={5}
-          fill={BUILDING_COLORS[b.type] || DEFAULT_BUILDING_COLOR}
-          rx={1}
+          cx={b.x * scaleX}
+          cy={b.y * scaleY}
+          size={4}
+          color={BUILDING_COLORS[b.type] || DEFAULT_BUILDING_COLOR}
+          shape={shapeFor(b.type)}
         />
       ))}
 
@@ -264,7 +395,23 @@ const OverviewMap = ({ mapConfig, zones, self, others }) => {
         <circle key={i} cx={o.x * scaleX} cy={o.y * scaleY} r={2.6} fill="#6b7094" />
       ))}
 
-      {self && <circle cx={self.x * scaleX} cy={self.y * scaleY} r={3.6} fill="#ffd76a" stroke="#fff" strokeWidth={0.8} />}
+      {worldEvent && (
+        <circle
+          cx={worldEvent.x * scaleX}
+          cy={worldEvent.z * scaleY}
+          r={6}
+          fill={EVENT_COLORS[worldEvent.type] || '#f97316'}
+          stroke="#fff"
+          strokeWidth={1.2}
+        />
+      )}
+
+      {self && (
+        <g>
+          <circle cx={self.x * scaleX} cy={self.y * scaleY} r={6} fill="#ffd76a" opacity={0.3} />
+          <circle cx={self.x * scaleX} cy={self.y * scaleY} r={4} fill="#ffd76a" stroke="#fff" strokeWidth={1} />
+        </g>
+      )}
     </svg>
   );
 };

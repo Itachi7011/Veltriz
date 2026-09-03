@@ -2,6 +2,15 @@ import React, { useEffect, useState } from 'react';
 import gameEvents from '../gameEvents';
 import { BUILDING_COLORS, DEFAULT_BUILDING_COLOR, ZONE_MAP_COLORS, zoneForX } from './mapColors';
 
+const EVENT_COLORS = {
+  rally: '#38bdf8',
+  gathering: '#38bdf8',
+  food_distribution: '#22c55e',
+  political_clash: '#f97316',
+  gang_war: '#ef4444',
+  economic_distress: '#eab308',
+};
+
 const BOX_SIZE = 168; // square widget, circular radar clipped inside it
 const RADIUS_PX = BOX_SIZE / 2 - 6;
 // How much of the world (in original map pixels) is visible in the radar
@@ -21,14 +30,20 @@ const VIEW_RADIUS = 800;
 const MiniMap = ({ mapConfig, onExpand }) => {
   const [self, setSelf] = useState(null);
   const [others, setOthers] = useState([]);
+  const [worldEvent, setWorldEvent] = useState(null);
 
   useEffect(() => {
     const onUpdate = ({ self: s, others: o }) => {
       setSelf(s);
       setOthers(o);
     };
+    const onEvent = (ev) => setWorldEvent(ev);
     gameEvents.on('minimap:update', onUpdate);
-    return () => gameEvents.off('minimap:update', onUpdate);
+    gameEvents.on('worldevent:active', onEvent);
+    return () => {
+      gameEvents.off('minimap:update', onUpdate);
+      gameEvents.off('worldevent:active', onEvent);
+    };
   }, []);
 
   if (!mapConfig || !self) return null;
@@ -50,6 +65,7 @@ const MiniMap = ({ mapConfig, onExpand }) => {
   const buildings = nearby(mapConfig.buildings || []);
   const houses = nearby(mapConfig.houses || [], 1.15);
   const visibleOthers = others.filter((o) => Math.hypot(o.x - self.x, o.y - self.y) < VIEW_RADIUS * 1.4);
+  const eventInRange = worldEvent && Math.hypot(worldEvent.x - self.x, worldEvent.z - self.y) < VIEW_RADIUS * 1.4;
 
   const worldToLocal = (x, y) => ({ x: (x - self.x) * pxPerUnit, y: (y - self.y) * pxPerUnit });
 
@@ -107,9 +123,24 @@ const MiniMap = ({ mapConfig, onExpand }) => {
               return <circle key={i} cx={p.x} cy={p.y} r={3} fill="#6b7094" stroke="#0a0c14" strokeWidth={0.8} />;
             })}
 
+            {eventInRange && (() => {
+              const p = worldToLocal(worldEvent.x, worldEvent.z);
+              const color = EVENT_COLORS[worldEvent.type] || '#f97316';
+              return (
+                <g>
+                  <circle cx={p.x} cy={p.y} r={10} fill={color} opacity={0.25}>
+                    <animate attributeName="r" values="8;14;8" dur="1.6s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.35;0.05;0.35" dur="1.6s" repeatCount="indefinite" />
+                  </circle>
+                  <circle cx={p.x} cy={p.y} r={5} fill={color} stroke="#fff" strokeWidth={1} />
+                </g>
+              );
+            })()}
+
             {/* Player marker: a fixed triangle pointing up (since the map
                 rotates around them, they never need to rotate themselves). */}
-            <polygon points="0,-8 6,7 -6,7" fill="#ffd76a" stroke="#fff" strokeWidth={1} />
+            <circle cx={0} cy={0} r={10} fill="#ffd76a" opacity={0.25} />
+            <polygon points="0,-9 7,8 -7,8" fill="#ffd76a" stroke="#fff" strokeWidth={1.4} />
           </g>
         </g>
 
@@ -123,6 +154,11 @@ const MiniMap = ({ mapConfig, onExpand }) => {
       </svg>
       <span className="veltriz-game-minimap-hint">M</span>
       {zone && <span className="veltriz-game-minimap-zone">{zone.name}</span>}
+      {eventInRange && (
+        <span className="veltriz-game-minimap-event" style={{ color: EVENT_COLORS[worldEvent.type] || '#f97316' }}>
+          {worldEvent.label}
+        </span>
+      )}
     </button>
   );
 };

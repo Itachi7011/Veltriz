@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import gameEvents from '../gameEvents';
+import { applyGripPose } from './CharacterModel';
 
 /**
  * Held tools and weapons.
@@ -170,13 +171,14 @@ const GRIP_TRANSFORM = {
 };
 
 export class WeaponSystem {
-  constructor({ scene, camera, cameraRig, bones, npcSystem, playerHeightGetter }) {
+  constructor({ scene, camera, cameraRig, bones, npcSystem, playerHeightGetter, audio }) {
     this.scene = scene;
     this.camera = camera;
     this.cameraRig = cameraRig;
     this.bones = bones;
     this.npcSystem = npcSystem;
     this.getPlayerY = playerHeightGetter;
+    this.audio = audio;
 
     this.currentKey = 'unarmed';
     this.worldItem = null;
@@ -229,6 +231,11 @@ export class WeaponSystem {
       this.bones.gripRight.add(worldModel);
       this.worldItem = worldModel;
 
+      // The right hand wraps around the grip instead of floating open
+      // next to it — melee tools get a slightly looser wrap than guns,
+      // which want a fuller fist around the grip/trigger guard.
+      applyGripPose(this.bones, 'Right', def.type === 'melee' ? 0.85 : 1);
+
       // Separate camera-attached viewmodel: the whole character (and
       // anything parented to it, including the world item above) is
       // hidden in first-person mode, so without this you'd be holding an
@@ -240,6 +247,8 @@ export class WeaponSystem {
       vm.visible = this.cameraRig.mode === 'first';
       this.camera.add(vm);
       this.viewModel = vm;
+    } else {
+      applyGripPose(this.bones, 'Right', 0);
     }
 
     if (def.type === 'ranged') {
@@ -274,6 +283,7 @@ export class WeaponSystem {
     this.isReloading = true;
     this.reloadRemaining = def.reloadTime;
     this._emitStatus();
+    this.audio?.playReload();
   }
 
   isAutomaticNow() {
@@ -346,6 +356,7 @@ export class WeaponSystem {
       if (this.cooldownRemaining > 0) return false;
       this.cooldownRemaining = def.cooldown;
       this.meleeSwingT = 0.35;
+      this.audio?.playMeleeSwing();
       return this._resolveMelee(def, playerPos);
     }
 
@@ -358,6 +369,7 @@ export class WeaponSystem {
     this.magAmmo -= 1;
     this._emitStatus();
     this._muzzleFlash();
+    this.audio?.playGunshot(this.currentKey);
     this.cameraRig.addRecoil(def.recoil * (this.isAiming ? 0.5 : 1), (Math.random() - 0.5) * def.recoil * 0.4);
     return this._resolveHitscan(def);
   }
@@ -416,6 +428,7 @@ export class WeaponSystem {
     this.npcSystem.applyDamage(npc, damage);
     this._recentHits.push(performance.now());
     gameEvents.emit('weapon:hit', { downed: npc.hp <= 0 });
+    this.audio?.playHitMarker();
 
     // Escalation: a couple of hits in a short window, or any takedown,
     // is exactly the kind of thing that should draw police attention —

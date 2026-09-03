@@ -10,6 +10,10 @@ import { getAccessToken } from '../../utils/tokenStore';
 import { enterFullscreen, exitFullscreen } from '../../utils/fullscreen';
 import GameHUD from './ui/GameHUD';
 import WeaponHUD from './ui/WeaponHUD';
+import VehicleHUD from './ui/VehicleHUD';
+import SubtitleBar from './ui/SubtitleBar';
+import PoliticsPanel from './ui/PoliticsPanel';
+import PhoneUI from './ui/PhoneUI';
 import NewsTicker from './ui/NewsTicker';
 import MiniMap from './ui/MiniMap';
 import FullMap from './ui/FullMap';
@@ -57,6 +61,7 @@ import OilRigPanel from './ui/OilRigPanel';
 import MarineResearchPanel from './ui/MarineResearchPanel';
 import SmugglersDenPanel from './ui/SmugglersDenPanel';
 import ChronoStorePanel from './ui/ChronoStorePanel';
+import HousePanel from './ui/HousePanel';
 import LoadingScreen from '../../components/shared/LoadingScreen';
 import './Game.css';
 
@@ -76,6 +81,8 @@ const GamePage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [nearbyBuilding, setNearbyBuilding] = useState(null); // 'job_center' | 'market' | 'bank' | 'home' | null
+  const [nearbyHouse, setNearbyHouse] = useState(null); // { id, name } | null — a purchasable house, not the starter 'home' building above
+  const [activeHouse, setActiveHouse] = useState(null); // snapshot of nearbyHouse taken when its panel opens, so it doesn't change under the panel if the player walks off
   const [crimeOpportunity, setCrimeOpportunity] = useState(null); // { actionKey, label } | null — set only while physically at a matching crime location
   const [openPanel, setOpenPanel] = useState(null);
   const [mapConfig, setMapConfig] = useState(null);
@@ -137,6 +144,20 @@ const GamePage = () => {
     };
   }, []);
 
+  // ---- House proximity prompt — any of the 100+ purchasable houses,
+  // separate from the 'home' building above since each house is its own
+  // individually-named/owned place rather than one shared building type. ----
+  useEffect(() => {
+    const onEnter = (house) => setNearbyHouse(house);
+    const onLeave = () => setNearbyHouse(null);
+    gameEvents.on('house:enter', onEnter);
+    gameEvents.on('house:leave', onLeave);
+    return () => {
+      gameEvents.off('house:enter', onEnter);
+      gameEvents.off('house:leave', onLeave);
+    };
+  }, []);
+
   // ---- Crime location proximity (which crime, if any, you're physically
   // standing at right now) + getting caught by a police NPC mid-chase ----
   useEffect(() => {
@@ -158,6 +179,26 @@ const GamePage = () => {
       gameEvents.off('crime:busted', onBusted);
     };
   }, []);
+
+  // ---- Politics panel (G) and phone (P) — driven by the 3D engine ----
+  useEffect(() => {
+    const onOpenPolitics = () => setOpenPanel((p) => (p ? p : 'politics'));
+    const onPhoneToggle = (using) => setOpenPanel(using ? 'phone' : (p) => (p === 'phone' ? null : p));
+    gameEvents.on('ui:openPolitics', onOpenPolitics);
+    gameEvents.on('phone:toggle', onPhoneToggle);
+    return () => {
+      gameEvents.off('ui:openPolitics', onOpenPolitics);
+      gameEvents.off('phone:toggle', onPhoneToggle);
+    };
+  }, []);
+
+  // However the phone panel closes (Escape, the X button, switching to a
+  // different panel) the engine needs to know so it can drop the "phone
+  // to ear" pose — otherwise pressing P again silently no-ops because the
+  // engine still thinks the phone is out.
+  useEffect(() => {
+    if (openPanel !== 'phone') gameRef.current?.closePhone();
+  }, [openPanel]);
 
   const pauseGame = useCallback(() => {
     gameRef.current?.pause();
@@ -207,12 +248,17 @@ const GamePage = () => {
   useEffect(() => {
     const onKeyDown = (e) => {
       const key = e.key.toLowerCase();
-      if ((key !== 'e' && key !== 'enter') || !nearbyBuilding || isPaused || isMapOpen) return;
-      setOpenPanel(nearbyBuilding);
+      if ((key !== 'e' && key !== 'enter') || isPaused || isMapOpen) return;
+      if (nearbyBuilding) {
+        setOpenPanel(nearbyBuilding);
+      } else if (nearbyHouse) {
+        setActiveHouse(nearbyHouse);
+        setOpenPanel('house');
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [nearbyBuilding, isPaused, isMapOpen]);
+  }, [nearbyBuilding, nearbyHouse, isPaused, isMapOpen]);
 
   // ---- Smugglers' Cove's "Open the Crime menu" shortcut button emits this
   // instead of calling setOpenPanel directly, since it lives in a
@@ -314,6 +360,12 @@ const GamePage = () => {
             </div>
           )}
 
+          {!nearbyBuilding && nearbyHouse && !openPanel && !isPaused && !isMapOpen && (
+            <div className="veltriz-game-interact-prompt">
+              Press <kbd>E</kbd> / <kbd>Enter</kbd> to enter {nearbyHouse.name}
+            </div>
+          )}
+
           {crimeOpportunity && !openPanel && !isPaused && !isMapOpen && (
             <div className="veltriz-game-interact-prompt veltriz-game-interact-prompt-crime">
               Press <kbd>C</kbd> — you can attempt something here
@@ -322,11 +374,13 @@ const GamePage = () => {
 
           {!openPanel && !isPaused && !isMapOpen && (
             <div className="veltriz-game-camera-hint">
-              <kbd>V</kbd> camera &nbsp;·&nbsp; <kbd>Shift</kbd> run &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>1-6</kbd> weapons &nbsp;·&nbsp; <kbd>R</kbd> reload &nbsp;·&nbsp; click to look/fire
+              <kbd>V</kbd> camera &nbsp;·&nbsp; <kbd>Shift</kbd> run &nbsp;·&nbsp; <kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>Q</kbd> skateboard &nbsp;·&nbsp; <kbd>F</kbd> vehicle &nbsp;·&nbsp; <kbd>G</kbd> gather &nbsp;·&nbsp; <kbd>P</kbd> phone &nbsp;·&nbsp; <kbd>1-6</kbd> weapons
             </div>
           )}
 
           {!openPanel && !isPaused && !isMapOpen && <WeaponHUD />}
+          {!openPanel && !isPaused && !isMapOpen && <VehicleHUD />}
+          {!isPaused && !isMapOpen && <SubtitleBar />}
 
           {isMapOpen && mapConfig && <FullMap mapConfig={mapConfig} onClose={() => setIsMapOpen(false)} />}
 
@@ -334,6 +388,8 @@ const GamePage = () => {
           {openPanel === 'market' && <MarketPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'bank' && <WalletPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'crime' && <CrimePanel onClose={() => setOpenPanel(null)} activeOpportunity={crimeOpportunity} />}
+          {openPanel === 'politics' && <PoliticsPanel onClose={() => setOpenPanel(null)} />}
+          {openPanel === 'phone' && <PhoneUI onClose={() => setOpenPanel(null)} />}
           {openPanel === 'hospital' && <HospitalPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'restaurant' && <RestaurantPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'city_hall' && <CityHallPanel onClose={() => setOpenPanel(null)} />}
@@ -373,16 +429,9 @@ const GamePage = () => {
           {openPanel === 'marine_research' && <MarineResearchPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'smugglers_den' && <SmugglersDenPanel onClose={() => setOpenPanel(null)} />}
           {openPanel === 'chrono_store' && <ChronoStorePanel onClose={() => setOpenPanel(null)} />}
-          {openPanel === 'home' && (
-            <div className="veltriz-game-panel-backdrop" onClick={() => setOpenPanel(null)}>
-              <div className="veltriz-game-panel" onClick={(e) => e.stopPropagation()}>
-                <h2>Home</h2>
-                <p>This is where you rest. Life-sim features (energy, sleep) arrive in a later phase.</p>
-                <button className="veltriz-game-panel-close" onClick={() => setOpenPanel(null)}>
-                  Close
-                </button>
-              </div>
-            </div>
+          {openPanel === 'home' && <HousePanel onClose={() => setOpenPanel(null)} />}
+          {openPanel === 'house' && activeHouse && (
+            <HousePanel onClose={() => setOpenPanel(null)} houseId={activeHouse.id} houseName={activeHouse.name} />
           )}
 
           {isPaused && <PauseMenu onResume={resumeGame} onExit={exitToMenu} />}

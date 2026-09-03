@@ -1,4 +1,16 @@
-import { buildCharacter, animateCharacter, SKIN_TONES, HAIR_COLORS, HAIR_STYLES } from './CharacterModel';
+import { buildCharacter, animateCharacter, applyPhonePose, clearPhonePose, SKIN_TONES, HAIR_COLORS, HAIR_STYLES } from './CharacterModel';
+import gameEvents from '../gameEvents';
+
+const AMBIENT_PHRASES = [
+  'Nice day out, isn\u2019t it?',
+  'Excuse me.',
+  'Watch it!',
+  'Have a good one.',
+  'Long day at work.',
+  'Is that the new SUV?',
+  'Did you hear about the rally downtown?',
+  'Careful, it\u2019s slippery.',
+];
 
 /**
  * Ambient pedestrian population.
@@ -51,6 +63,15 @@ function randomAppearance(role) {
       pantsColor: '#111827',
       shoeColor: '#0b0e14',
       buildScale,
+      // A fresh random seed per spawn — without this, two police NPCs
+      // that happen to roll the same skin/hair/outfit combo (common,
+      // since the uniform locks most of the palette) would render with
+      // literally the same face. Biased toward square/long archetypes so
+      // police as a group read as a bit more square-jawed/stern than the
+      // general population, while any two individual officers still look
+      // like different people.
+      faceSeed: Math.floor(Math.random() * 2 ** 31),
+      faceArchetypePool: ['square', 'long', 'oval'],
     };
   }
 
@@ -62,6 +83,9 @@ function randomAppearance(role) {
     outfitColor: randomFrom(['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#94a3b8', '#f97316', '#14b8a6']),
     pantsColor: randomFrom(['#232842', '#1f2937', '#3f3f46', '#44403c']),
     buildScale,
+    // Civilians draw from every archetype, unrestricted — this is the
+    // general population, so it should look like one.
+    faceSeed: Math.floor(Math.random() * 2 ** 31),
   };
 }
 
@@ -80,6 +104,7 @@ export class NpcSystem {
 
     this.alertedUntil = 0;
     this.alertOrigin = null;
+    this._lastAmbientChatterAt = 0;
   }
 
   _blockedAt(x, z, radius = 0.32) {
@@ -200,6 +225,21 @@ export class NpcSystem {
 
     const chasing = now < this.alertedUntil;
 
+    // Ambient chatter: every so often, if a civilian is close enough to
+    // actually be heard, have them say something generic — keeps the
+    // world feeling alive even with nothing special happening.
+    if (now - this._lastAmbientChatterAt > 7000) {
+      const nearby = this.active.filter((n) => {
+        if (n.role !== 'civilian' || n.eventRef || n.downedUntil > now) return false;
+        return Math.hypot(n.rig.group.position.x - playerPos.x, n.rig.group.position.z - playerPos.z) < 9;
+      });
+      if (nearby.length) {
+        this._lastAmbientChatterAt = now;
+        const phrase = AMBIENT_PHRASES[Math.floor(Math.random() * AMBIENT_PHRASES.length)];
+        gameEvents.emit('subtitle:show', { name: 'Passerby', text: phrase });
+      }
+    }
+
     this.active.forEach((npc) => {
       if (npc.downedUntil > now) return; // lying down, no AI/animation while down
       if (npc.downedUntil > 0 && npc.downedUntil <= now) {
@@ -209,6 +249,10 @@ export class NpcSystem {
         npc.dead = true;
         return;
       }
+      // While assigned to a political event, PoliticalEventSystem owns
+      // this NPC's movement/pose entirely (walking to their crowd spot,
+      // then standing and reacting) — don't fight it with normal wander.
+      if (npc.eventRef) return;
 
       const pos = npc.rig.group.position;
 
@@ -236,12 +280,27 @@ export class NpcSystem {
         pos.z += (dz / dist) * step;
         npc.rig.group.rotation.y = Math.atan2(dx, dz);
         speedFactor = npc.chasing ? 1 : 0.45;
+        if (npc.phoneUntil) {
+          clearPhonePose(npc.rig.bones);
+          npc.phoneUntil = 0;
+        }
       } else if (now > npc.idleUntil) {
         npc.idleUntil = now + 2000 + Math.random() * 4000;
         npc.target = this._pickWanderTarget(npc.anchor);
+        // A fraction of the time, "check their phone" for a few seconds
+        // before wandering off again — small ambient life detail.
+        npc.phoneUntil = Math.random() < 0.25 ? now + 2200 + Math.random() * 1800 : 0;
       }
 
-      animateCharacter(npc.rig.bones, { time: now / 1000, speedFactor });
+      if (npc.phoneUntil && now < npc.phoneUntil) {
+        applyPhonePose(npc.rig.bones);
+      } else {
+        if (npc.phoneUntil) {
+          clearPhonePose(npc.rig.bones);
+          npc.phoneUntil = 0;
+        }
+        animateCharacter(npc.rig.bones, { time: now / 1000, speedFactor });
+      }
     });
   }
 

@@ -1,15 +1,30 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { X, VenetianMask, Flame, Zap, Gem } from 'lucide-react';
+import { X, VenetianMask, Flame, Zap, Gem, MapPin } from 'lucide-react';
 import Swal from 'sweetalert2';
 import http from '../../../lib/httpClient';
+import gameEvents from '../gameEvents';
+import CrimeMinigame from './CrimeMinigame';
 
-const CrimePanel = ({ onClose }) => {
+// Where each action can actually be attempted — mirrors GameEngine's
+// CRIME_LOCATIONS so the hint text here matches what actually triggers
+// `activeOpportunity` in the 3D world.
+const LOCATION_HINTS = {
+  pickpocket: 'Walk up next to someone on the street',
+  shoplift: 'Go to a market, boutique, electronics store, jeweler, hardware store, or trading post',
+  burglary: 'Go to any house',
+  carjack: 'Go to a vehicle dealer',
+  smuggling: "Go to a marina, port authority, fishing wharf, or Smugglers' Den",
+  heist: 'Go to a bank or the stock exchange',
+};
+
+const CrimePanel = ({ onClose, activeOpportunity }) => {
   const [actions, setActions] = useState([]);
   const [status, setStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [busyKey, setBusyKey] = useState(null);
   const [cooldowns, setCooldowns] = useState({});
   const [chronoShards, setChronoShards] = useState(0);
+  const [minigameFor, setMinigameFor] = useState(null); // action object mid-minigame
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -29,7 +44,6 @@ const CrimePanel = ({ onClose }) => {
     load();
   }, [load]);
 
-  // Tick down displayed cooldowns locally so the UI doesn't need to keep polling
   useEffect(() => {
     const t = setInterval(() => {
       setCooldowns((prev) => {
@@ -43,7 +57,7 @@ const CrimePanel = ({ onClose }) => {
     return () => clearInterval(t);
   }, []);
 
-  const attempt = async (actionKey) => {
+  const submitAttempt = async (actionKey) => {
     setBusyKey(actionKey);
     try {
       const { data: res } = await http.post('/api/crime/attempt', { actionKey });
@@ -61,6 +75,12 @@ const CrimePanel = ({ onClose }) => {
         heat: res.heatAfter,
         isDangerous: res.heatAfter >= 70,
       }));
+      // A bad outcome while already running hot sends nearby police after
+      // you in the actual 3D world — this is the "real consequence" half
+      // of the loop, not just a stat going up.
+      if (res.outcome !== 'success' && res.heatAfter >= 70) {
+        gameEvents.emit('crime:alertPolice');
+      }
     } catch (err) {
       if (err.response?.status === 429) {
         setCooldowns((prev) => ({ ...prev, [actionKey]: err.response.data.remainingSeconds }));
@@ -70,6 +90,22 @@ const CrimePanel = ({ onClose }) => {
     } finally {
       setBusyKey(null);
     }
+  };
+
+  // Pressing "Attempt" no longer resolves anything by itself — it opens
+  // the physical mini-game first, and tells the 3D engine to actually
+  // play a crouch/reach animation on the character for its duration, so
+  // this looks like doing something instead of a UI bar resolving in a
+  // vacuum. Only a pass there results in the actual server call.
+  const beginAttempt = (action) => {
+    setMinigameFor(action);
+    gameEvents.emit('crime:performing', { actionKey: action.key, durationMs: 1800 });
+  };
+
+  const onMinigameResult = (success) => {
+    const action = minigameFor;
+    setMinigameFor(null);
+    if (success) submitAttempt(action.key);
   };
 
   const formatCooldown = (secs) => {
@@ -121,12 +157,14 @@ const CrimePanel = ({ onClose }) => {
 
         {isLoading ? (
           <p>Loading…</p>
+        ) : minigameFor ? (
+          <CrimeMinigame title={minigameFor.title} difficulty={1 - minigameFor.baseSuccessChance} onResult={onMinigameResult} />
         ) : (
           <>
             <div className="veltriz-game-heat-meter">
               <div className="veltriz-game-heat-meter-label">
                 <Flame size={14} color={status.isDangerous ? '#ef4444' : '#f59e0b'} />
-                Heat: {status.heat}/100 {status.isDangerous && <span className="veltriz-game-heat-danger">— TOO HOT, odds halved</span>}
+                Heat: {status.heat}/100 {status.isDangerous && <span className="veltriz-game-heat-danger">— TOO HOT, odds halved, police are watching</span>}
               </div>
               <div className="veltriz-game-heat-meter-track">
                 <div
@@ -143,26 +181,35 @@ const CrimePanel = ({ onClose }) => {
               <div className="veltriz-game-heat-stats">
                 <Gem size={11} style={{ verticalAlign: '-1px' }} /> {chronoShards} Chrono Shards
               </div>
+              <div className="veltriz-game-heat-stats" style={{ marginTop: 6 }}>
+                Crimes now have to be attempted where they'd actually happen — you'll see a "Press C" prompt in the world when you're at a matching spot.
+              </div>
             </div>
 
             <div className="veltriz-game-job-list">
               {actions.map((action) => {
                 const cooldown = cooldowns[action.key];
                 const onCooldown = cooldown > 0;
+                const isHere = activeOpportunity?.actionKey === action.key;
                 return (
-                  <div key={action.key} className="veltriz-game-job-card">
+                  <div key={action.key} className={`veltriz-game-job-card ${!isHere ? 'veltriz-crime-card-distant' : ''}`}>
                     <div>
                       <div className="veltriz-game-job-title">{action.title}</div>
                       <div className="veltriz-game-job-desc">{action.description}</div>
                       <div className="veltriz-game-job-desc">
                         {Math.round(action.baseSuccessChance * 100)}% success · {action.minPayout}-{action.maxPayout} VC
                       </div>
+                      <div className="veltriz-crime-location-hint">
+                        <MapPin size={11} />
+                        {isHere ? "You're here — go for it" : LOCATION_HINTS[action.key]}
+                      </div>
                     </div>
                     <div className="veltriz-game-job-meta">
                       <button
                         className="veltriz-game-btn danger"
-                        disabled={busyKey === action.key || onCooldown}
-                        onClick={() => attempt(action.key)}
+                        disabled={busyKey === action.key || onCooldown || !isHere}
+                        title={!isHere ? LOCATION_HINTS[action.key] : undefined}
+                        onClick={() => beginAttempt(action)}
                       >
                         {onCooldown ? formatCooldown(cooldown) : 'Attempt'}
                       </button>

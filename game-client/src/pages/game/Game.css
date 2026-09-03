@@ -160,6 +160,68 @@
   background: #ef4444 !important;
 }
 
+.veltriz-game-interact-prompt-vehicle {
+  border-color: #22c55e;
+  bottom: 152px;
+}
+
+.veltriz-game-interact-prompt-jack {
+  border-color: #f97316;
+  bottom: 152px;
+}
+
+.veltriz-game-interact-prompt-jack kbd {
+  background: #f97316 !important;
+}
+
+.veltriz-game-interact-prompt-vehicle kbd {
+  background: #22c55e !important;
+}
+
+.veltriz-vehicle-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 8;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  background: rgba(10, 12, 20, 0.45);
+  border-radius: 10px;
+  padding: 10px 16px;
+}
+
+.veltriz-vehicle-hud-speed {
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.veltriz-vehicle-hud-unit {
+  font-size: 0.72rem;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.veltriz-vehicle-hud-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.veltriz-vehicle-hud-hint {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.veltriz-vehicle-hud-hint kbd {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
 .veltriz-game-interact-prompt kbd {
   background: #7c3aed;
   padding: 2px 8px;
@@ -341,6 +403,159 @@
 
 .veltriz-crime-minigame-result.bad {
   color: #f87171;
+}
+
+/* ---- Subtitles ---- */
+.veltriz-subtitle-bar {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 70%;
+  background: rgba(5, 6, 12, 0.72);
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: #f4f6ff;
+  font-size: 0.9rem;
+  text-align: center;
+  z-index: 11;
+  animation: veltriz-auth-fade-in 200ms ease;
+  pointer-events: none;
+}
+
+.veltriz-subtitle-name {
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+/* ---- Politics panel ---- */
+.veltriz-politics-hint {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 16px;
+}
+
+.veltriz-politics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.veltriz-politics-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1a1e33;
+  border: 1px solid #262b47;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.veltriz-politics-option:hover:not(:disabled) {
+  border-color: #7c3aed;
+}
+
+.veltriz-politics-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.veltriz-politics-option-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.veltriz-politics-option-desc {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.veltriz-politics-started {
+  margin-top: 14px;
+  text-align: center;
+  color: #4ade80;
+  font-weight: 600;
+}
+
+/* ---- Phone UI ---- */
+.veltriz-phone {
+  width: 300px;
+  background: #0c0e16;
+  border: 3px solid #2b2f45;
+  border-radius: 28px;
+  padding: 10px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.veltriz-phone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #cbd5f5;
+  font-size: 0.8rem;
+  padding: 4px 8px 8px;
+}
+
+.veltriz-phone-screen {
+  background: linear-gradient(180deg, #101425, #0a0d18);
+  border-radius: 16px;
+  min-height: 260px;
+  padding: 18px;
+  color: #e2e8f0;
+}
+
+.veltriz-phone-screen h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  color: #93c5fd;
+}
+
+.veltriz-phone-stat {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #4ade80;
+}
+
+.veltriz-phone-substat {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 4px;
+}
+
+.veltriz-phone-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+}
+
+.veltriz-phone-list li {
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.veltriz-phone-tabs {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 10px;
+}
+
+.veltriz-phone-tabs button {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.veltriz-phone-tabs button.active {
+  background: rgba(124, 58, 237, 0.25);
+  color: #fff;
 }
 
 /* ---- Panels ---- */
@@ -810,6 +1025,21 @@
   padding: 2px 8px;
   border-radius: 6px;
   pointer-events: none;
+}
+
+.veltriz-game-minimap-event {
+  position: absolute;
+  bottom: -42px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(10, 12, 20, 0.75);
+  padding: 2px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+  animation: veltriz-auth-fade-in 200ms ease;
 }
 
 @media (max-width: 600px) {
