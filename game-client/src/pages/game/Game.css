@@ -934,6 +934,121 @@
   margin-top: 8px;
 }
 
+/* ---------------------------------------------------------------- */
+/* Settings panel                                                    */
+/* ---------------------------------------------------------------- */
+
+.veltriz-settings-panel {
+  text-align: left;
+}
+
+.veltriz-settings-section {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #23274a;
+}
+
+.veltriz-settings-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+
+.veltriz-settings-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.9rem;
+  color: #a9adcf;
+  margin: 0 0 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.veltriz-settings-quality-row {
+  display: flex;
+  gap: 8px;
+}
+
+.veltriz-settings-quality-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1px solid #2b2f52;
+  background: #1c2038;
+  color: #e8eaff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.veltriz-settings-quality-btn.selected {
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  border-color: transparent;
+}
+
+.veltriz-settings-hint {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: #6b7094;
+}
+
+.veltriz-settings-slider-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 48px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+}
+
+.veltriz-settings-slider-row input[type='range'] {
+  width: 100%;
+  accent-color: #7c3aed;
+}
+
+.veltriz-settings-slider-value {
+  text-align: right;
+  color: #a9adcf;
+  font-variant-numeric: tabular-nums;
+}
+
+.veltriz-settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.veltriz-settings-toggle-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+}
+
+.veltriz-settings-footnote {
+  font-size: 0.72rem;
+  color: #565a7d;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.veltriz-game-fps-counter {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(5, 6, 12, 0.6);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  z-index: 25;
+  pointer-events: none;
+}
+
 @media (max-width: 600px) {
   .veltriz-game-hud {
     font-size: 0.8rem;

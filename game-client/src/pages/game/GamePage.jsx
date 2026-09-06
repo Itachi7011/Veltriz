@@ -10,6 +10,7 @@ import { getAccessToken } from '../../utils/tokenStore';
 import { enterFullscreen, exitFullscreen } from '../../utils/fullscreen';
 import GameHUD from './ui/GameHUD';
 import WeaponHUD from './ui/WeaponHUD';
+import FpsCounter from './ui/FpsCounter';
 import VehicleHUD from './ui/VehicleHUD';
 import SubtitleBar from './ui/SubtitleBar';
 import PoliticsPanel from './ui/PoliticsPanel';
@@ -379,6 +380,7 @@ const GamePage = () => {
           )}
 
           {!openPanel && !isPaused && !isMapOpen && <WeaponHUD />}
+          <FpsCounter />
           {!openPanel && !isPaused && !isMapOpen && <VehicleHUD />}
           {!isPaused && !isMapOpen && <SubtitleBar />}
 

@@ -16,11 +16,43 @@ export const WORLD_SCALE = 0.08; // 1 map pixel -> 0.08 world units (~12.5px per
 const MOVE_EMIT_INTERVAL_MS = 90;
 const MINIMAP_EMIT_INTERVAL_MS = 250;
 const CULL_TICK_MS = 300;
-const HOUSE_RENDER_DIST = 95;
-const BUILDING_RENDER_DIST = 190;
-const NEARBY_COLLIDABLE_DIST = 40;
 const CRIME_INTERACT_DIST = 3.2;
 const BUST_DIST = 1.7;
+
+// ---------------------------------------------------------------------
+// Graphics quality — Low / Medium / HD. Each tier trades render/view
+// distance, shadow quality, and resolution for performance. Persisted to
+// localStorage so it survives a reload; read once at construction (for
+// the renderer's antialias flag, which can only be set when the
+// WebGLRenderer is created) and re-applied live at any time afterward
+// for everything else via applyGraphicsQuality().
+// ---------------------------------------------------------------------
+export const GRAPHICS_QUALITIES = ['low', 'medium', 'hd'];
+const GRAPHICS_PRESETS = {
+  low: { pixelRatioCap: 1, antialias: false, shadows: false, houseRenderDist: 55, buildingRenderDist: 110, nearbyCollidableDist: 26, fogNear: 26, fogFar: 120 },
+  medium: { pixelRatioCap: 1.5, antialias: true, shadows: true, shadowMapSize: 1024, houseRenderDist: 95, buildingRenderDist: 190, nearbyCollidableDist: 40, fogNear: 60, fogFar: 220 },
+  hd: { pixelRatioCap: 2, antialias: true, shadows: true, shadowMapSize: 2048, houseRenderDist: 150, buildingRenderDist: 280, nearbyCollidableDist: 55, fogNear: 100, fogFar: 340 },
+};
+const SETTINGS_STORAGE_KEY = 'veltriz:settings';
+
+export function loadStoredSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function saveStoredSettings(patch) {
+  try {
+    const current = loadStoredSettings();
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch {
+    /* localStorage unavailable (private browsing, etc.) — settings just won't persist across reloads */
+  }
+}
 
 // Which crime actions require being physically at a matching kind of
 // place — this is what turns "crime" from a menu you can click from
@@ -125,9 +157,23 @@ export default class GameEngine {
 
   // ---------------------------------------------------------------- THREE
   _initThree() {
+    // Graphics quality is read once here (for the renderer's antialias
+    // flag — a WebGLRenderer construction-time option, can't change it
+    // live without recreating the whole renderer) and every other tier
+    // of it is re-applied any time afterward via applyGraphicsQuality(),
+    // including immediately below.
+    const stored = loadStoredSettings();
+    const quality = GRAPHICS_QUALITIES.includes(stored.graphicsQuality) ? stored.graphicsQuality : 'medium';
+    const preset = GRAPHICS_PRESETS[quality];
+    this.graphicsQuality = quality;
+    // Populated for real by applyGraphicsQuality() just below — these
+    // exist purely so _updateCulling has a sane value on the very first
+    // call before that runs.
+    this.renderDist = { house: preset.houseRenderDist, building: preset.buildingRenderDist, nearbyCollidable: preset.nearbyCollidableDist };
+
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#8fc7e8');
-    this.scene.fog = new THREE.Fog('#8fc7e8', 60, 220);
+    this.scene.fog = new THREE.Fog('#8fc7e8', preset.fogNear, preset.fogFar);
 
     this.camera = new THREE.PerspectiveCamera(
       70,
@@ -136,11 +182,8 @@ export default class GameEngine {
       600
     );
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new THREE.WebGLRenderer({ antialias: preset.antialias, powerPreference: 'high-performance' });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
@@ -150,7 +193,6 @@ export default class GameEngine {
     const sun = new THREE.DirectionalLight('#fff3d6', 1.4);
     sun.position.set(40, 70, 20);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 160;
     sun.shadow.camera.left = -60;
@@ -162,6 +204,44 @@ export default class GameEngine {
     this.sun = sun;
     this.sunTarget = sun.target;
     this.scene.add(sun.target);
+
+    // Applies pixel ratio / shadow enable+resolution / render distances
+    // for the chosen quality — the same method Settings calls live later.
+    this.applyGraphicsQuality(quality);
+  }
+
+  /**
+   * Applies a graphics quality tier LIVE (safe to call mid-session, e.g.
+   * from the Settings panel) — everything except antialiasing, which is
+   * fixed at renderer creation (see _initThree). Persists the choice so
+   * it's remembered next time the game loads.
+   * @param {'low'|'medium'|'hd'} quality
+   */
+  applyGraphicsQuality(quality) {
+    const preset = GRAPHICS_PRESETS[quality] || GRAPHICS_PRESETS.medium;
+    this.graphicsQuality = quality;
+    saveStoredSettings({ graphicsQuality: quality });
+
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, preset.pixelRatioCap));
+    this.renderer.shadowMap.enabled = preset.shadows;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    if (this.sun) {
+      this.sun.castShadow = preset.shadows;
+      if (preset.shadows && preset.shadowMapSize) {
+        // mapSize only takes effect on the next shadow-map render pass,
+        // which happens automatically — no manual "rebuild" needed.
+        this.sun.shadow.mapSize.set(preset.shadowMapSize, preset.shadowMapSize);
+      }
+    }
+    if (this.scene?.fog) {
+      this.scene.fog.near = preset.fogNear;
+      this.scene.fog.far = preset.fogFar;
+    }
+    this.renderDist = {
+      house: preset.houseRenderDist,
+      building: preset.buildingRenderDist,
+      nearbyCollidable: preset.nearbyCollidableDist,
+    };
   }
 
   // ---------------------------------------------------------------- WORLD
@@ -262,6 +342,36 @@ export default class GameEngine {
 
     this._onAudioMuteToggle = (muted) => this.audio.setMuted(muted);
     gameEvents.on('audio:setMuted', this._onAudioMuteToggle);
+
+    // Settings panel pushes changes here live — same decoupled pattern
+    // as audio:setMuted above, so the panel doesn't need a direct engine
+    // reference. Also applied once immediately below from whatever was
+    // last saved, so a returning player's preferences take effect the
+    // moment the game (re)loads, not just when they open Settings again.
+    this._onSettingsUpdate = (patch) => this.applySettings(patch);
+    gameEvents.on('settings:update', this._onSettingsUpdate);
+    this.applySettings(loadStoredSettings());
+  }
+
+  /**
+   * Applies a partial settings patch — graphics quality, audio levels,
+   * mouse sensitivity/invert — live, and persists whatever's included.
+   * Safe to call with just the fields that changed; anything omitted is
+   * left as-is. This is the single entry point both the initial load
+   * (see constructor above) and the Settings panel (via the
+   * 'settings:update' event) go through.
+   */
+  applySettings(patch = {}) {
+    if (patch.graphicsQuality && GRAPHICS_QUALITIES.includes(patch.graphicsQuality)) {
+      this.applyGraphicsQuality(patch.graphicsQuality);
+    }
+    if (typeof patch.masterVolume === 'number') this.audio.setMasterVolume(patch.masterVolume);
+    if (typeof patch.musicVolume === 'number') this.audio.setMusicVolume(patch.musicVolume);
+    if (typeof patch.sfxVolume === 'number') this.audio.setSfxVolume(patch.sfxVolume);
+    if (typeof patch.mouseSensitivity === 'number') this.cameraRig.sensitivity = patch.mouseSensitivity;
+    if (typeof patch.invertY === 'boolean') this.cameraRig.invertY = patch.invertY;
+    if (typeof patch.showFps === 'boolean') this.showFps = patch.showFps;
+    saveStoredSettings(patch);
   }
 
   openPhone() {
@@ -320,7 +430,11 @@ export default class GameEngine {
       if (e.code === 'KeyR') {
         this.weaponSystem.startReload();
       }
-      if (e.code === 'KeyF') {
+      // 'F' and 'Enter' are fully interchangeable for entering/exiting a
+      // vehicle — same as building/house interaction already treats them
+      // (see GamePage.jsx's key handler), so a player never has to
+      // remember "F is for cars, Enter is for doors".
+      if (e.code === 'KeyF' || e.code === 'Enter') {
         this._toggleVehicle();
       }
       if (e.code === 'KeyQ') {
@@ -334,6 +448,9 @@ export default class GameEngine {
       }
       if (e.code === 'KeyH' && this.isDriving) {
         this.audio?.playHorn();
+      }
+      if (e.code === 'KeyT') {
+        this._toggleNearestTrunk();
       }
       const slotIndex = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(e.code);
       if (slotIndex !== -1 && WEAPON_SLOTS[slotIndex]) {
@@ -452,6 +569,20 @@ export default class GameEngine {
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
 
+    // Lightweight FPS tracking for the optional on-screen counter
+    // (Settings > Show FPS) — only emits when enabled and only a few
+    // times a second, so it costs nothing when the setting is off.
+    if (this.showFps) {
+      this._fpsFrames = (this._fpsFrames || 0) + 1;
+      this._fpsLastEmit = this._fpsLastEmit || now;
+      if (now - this._fpsLastEmit > 250) {
+        const fps = Math.round((this._fpsFrames * 1000) / (now - this._fpsLastEmit));
+        gameEvents.emit('fps:update', fps);
+        this._fpsFrames = 0;
+        this._fpsLastEmit = now;
+      }
+    }
+
     try {
       this._updateMovement(dt, now);
       this._updateRemoteInterpolation();
@@ -491,6 +622,14 @@ export default class GameEngine {
       this._updateDriving(dt, now);
       return;
     }
+
+    // Vehicles are dynamic (they move every frame) so they can't be baked
+    // into the static collider list the way buildings/houses are — feed
+    // the current on-foot-blocking set to the physics controller every
+    // frame instead. This is what makes cars/bikes solid to a walking
+    // player; previously nothing registered vehicles as obstacles at all,
+    // so you could walk straight through a parked or moving one.
+    this.physics.setVehicleColliders(this.vehicleSystem.getVehicleColliders());
 
     const forward = (this.keys.KeyW || this.keys.ArrowUp ? 1 : 0) - (this.keys.KeyS || this.keys.ArrowDown ? 1 : 0);
     const strafe = (this.keys.KeyD || this.keys.ArrowRight ? 1 : 0) - (this.keys.KeyA || this.keys.ArrowLeft ? 1 : 0);
@@ -539,6 +678,7 @@ export default class GameEngine {
         speedFactor,
         headPitch: this.cameraRig.mode === 'first' ? 0 : this.cameraRig.pitch,
         isGrounded: this.physics.isGrounded,
+        onRamp: this.physics.onRamp,
       });
     }
 
@@ -569,6 +709,28 @@ export default class GameEngine {
   }
 
   // ------------------------------------------------------------ DRIVING
+  /**
+   * 'T' — open/close the trunk (or rear doors on a van) of whichever car
+   * is relevant: the one you're currently driving, or the nearest
+   * enterable one if you're on foot standing next to it. No-ops quietly
+   * on bikes/motorbikes (no trunk) or when nothing's in range, rather
+   * than requiring the player to already be looking at exactly the right
+   * thing.
+   */
+  _toggleNearestTrunk() {
+    let entry = null;
+    if (this.isDriving) {
+      entry = this.vehicleSystem.drivenEntry;
+    } else {
+      const pos = this.physics.getPosition();
+      entry = this.vehicleSystem.getNearestEnterable(pos) || this.vehicleSystem.getNearestJackable(pos);
+    }
+    if (!entry) return;
+    const isOpen = this.vehicleSystem.toggleTrunk(entry);
+    if (isOpen === null) return; // this vehicle has no trunk (e.g. a bike)
+    gameEvents.emit('vehicle:trunk', { open: isOpen });
+  }
+
   _toggleVehicle() {
     if (this.isDriving) {
       const exitSpot = this.vehicleSystem.exit();
@@ -602,6 +764,19 @@ export default class GameEngine {
       this.vehicleSystem.carjack(jackable);
       this.isDriving = true;
       gameEvents.emit('crime:alertPolice');
+    }
+    if (this.isDriving) {
+      // Snap the free-look camera to face the same way the vehicle is
+      // already facing the instant you get in. Without this, the camera
+      // keeps whatever yaw it had from walking around on foot — which
+      // has nothing to do with the vehicle's heading — so the driver's
+      // model (which _updateDriving correctly points along the vehicle's
+      // heading) could end up facing almost any direction relative to
+      // where the camera orbits to, making it look like the character is
+      // backwards/turned away. This is what makes "get in, camera is
+      // already behind you looking the way you're driving" true.
+      const t = this.vehicleSystem.drivenEntry?.controller.getTransform();
+      if (t) this.cameraRig.yaw = t.heading;
     }
     if (this.isSkateboarding) {
       this.isSkateboarding = false;
@@ -664,20 +839,30 @@ export default class GameEngine {
     }
 
     const throttle = (this.keys.KeyW || this.keys.ArrowUp ? 1 : 0) - (this.keys.KeyS || this.keys.ArrowDown ? 1 : 0);
-    // NOTE: with this game's heading convention (dx=sin(heading),
-    // dz=cos(heading), same as CameraRig/PhysicsController), *increasing*
-    // heading turns the vehicle to its LEFT, not its right — verified
-    // numerically against PhysicsController's already-fixed strafe basis
-    // (see that file's comment). So Left/A must be the input that
-    // *increases* steer, and Right/D must *decrease* it, for the vehicle
-    // to actually turn toward the side the player pressed. This was
-    // previously inverted (D/Right turned the vehicle left, A/Left turned
-    // it right) — fixed here.
+    // Empirically verified (not just derived on paper): with this
+    // vehicle model's construction (chassis front = local +X, inner
+    // group rotated -90°, outer group rotated by `heading`), increasing
+    // heading turns the car's own nose toward ITS LEFT, not its right —
+    // confirmed by literally building the geometry and measuring which
+    // way the nose moves. So D/Right (which should turn the car right)
+    // must DECREASE heading, meaning A/Left is the input that increases
+    // steer here, not D/Right.
     const steer = (this.keys.KeyA || this.keys.ArrowLeft ? 1 : 0) - (this.keys.KeyD || this.keys.ArrowRight ? 1 : 0);
     const handbrake = !!this.keys.Space;
 
     entry.controller.update(dt, { throttle, steer, handbrake });
     const t = entry.controller.getTransform();
+
+    // Softly ease the free-look camera yaw toward the vehicle's heading
+    // every frame — mouse input still moves it instantly (this only nudges
+    // it, it doesn't fight active input), but the moment the player stops
+    // moving the mouse the camera drifts back to sit behind the vehicle
+    // within a second or so, instead of staying wherever it happened to be
+    // pointed (e.g. from walking around on foot before getting in) while
+    // the vehicle turns underneath it.
+    let yawDiff = t.heading - this.cameraRig.yaw;
+    yawDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff)); // shortest angular path
+    this.cameraRig.yaw += yawDiff * Math.min(1, dt * 2.2);
 
     this._engineTickTimer = (this._engineTickTimer || 0) + dt;
     if (this._engineTickTimer > 0.4) {
@@ -688,15 +873,28 @@ export default class GameEngine {
     // Sit the player rig at the vehicle rather than hiding it entirely —
     // the on-foot physics body is left exactly where it was parked and
     // gets restored on exit, this is purely visual.
-    this.playerRig.group.position.set(t.x, t.y + entry.seatHeight, t.z);
+    //
+    // entry.seatHeight is where the HIPS should end up (~seat cushion
+    // height); the rig's root sits `hipOffset` below its own hips (see
+    // buildCharacter's comment on hipOffset), so the root has to be
+    // placed that far below the seat, or the player floats a hip-height
+    // above the actual seat — which is what "riding on the roof" was.
+    const fwd = entry.seatForwardOffset || 0;
+    const hipOffset = this.playerRig.hipOffset || 0;
+    const seatWorldX = t.x + Math.sin(t.heading) * fwd;
+    const seatWorldZ = t.z + Math.cos(t.heading) * fwd;
+    this.playerRig.group.position.set(seatWorldX, t.y + entry.seatHeight - hipOffset, seatWorldZ);
     this.playerRig.group.visible = true;
     applyDrivingPose(this.playerRig.bones);
 
     // Camera keeps its normal free-look (mouse yaw/pitch), just orbiting
     // the vehicle's position instead of the on-foot physics position —
     // this is what lets you look around / drive-by shoot while driving
-    // in a straight line, same as the reference game.
-    this.cameraRig.update({ x: t.x, y: t.y + entry.seatHeight, z: t.z }, this._nearbyCollidables || []);
+    // in a straight line, same as the reference game. Targets a bit
+    // above the hip/seat height (roughly chest height) for a natural
+    // driving framing rather than aiming the camera at the character's
+    // waist.
+    this.cameraRig.update({ x: seatWorldX, y: t.y + entry.seatHeight + 0.35, z: seatWorldZ }, this._nearbyCollidables || []);
     // cameraRig.update() just pointed the character rig at the mouse's
     // free-look yaw (correct for on-foot) — override with the vehicle's
     // OWN heading instead, so free-looking around doesn't spin the car.
@@ -720,6 +918,8 @@ export default class GameEngine {
       kind: entry.kind,
       speedKmh: Math.round(Math.abs(t.speed) * 3.6),
       reversing: t.speed < -0.1,
+      hasTrunk: !!entry.trunkHinge,
+      trunkOpen: !!entry.trunkOpen,
     });
   }
 
@@ -755,22 +955,22 @@ export default class GameEngine {
 
     this.houseEntries.forEach((entry) => {
       const d = Math.hypot(entry.footprint.x - pos.x, entry.footprint.z - pos.z);
-      entry.group.visible = d < HOUSE_RENDER_DIST;
+      entry.group.visible = d < this.renderDist.house;
     });
     this.buildingEntries.forEach((entry) => {
       const d = Math.hypot(entry.footprint.x - pos.x, entry.footprint.z - pos.z);
-      entry.group.visible = d < BUILDING_RENDER_DIST;
+      entry.group.visible = d < this.renderDist.building;
     });
 
     this._nearbyCollidables = [...this.buildingEntries, ...this.houseEntries]
       .filter((e) => {
         const d = Math.hypot(e.footprint.x - pos.x, e.footprint.z - pos.z);
-        return d < NEARBY_COLLIDABLE_DIST;
+        return d < this.renderDist.nearbyCollidable;
       })
       .map((e) => e.group);
 
-    this.npcSystem.applyCulling(pos, HOUSE_RENDER_DIST);
-    this.vehicleSystem.applyCulling(pos, BUILDING_RENDER_DIST);
+    this.npcSystem.applyCulling(pos, this.renderDist.house);
+    this.vehicleSystem.applyCulling(pos, this.renderDist.building);
 
     // Keep the sun's shadow frustum centered near the player so shadows
     // stay sharp anywhere across a 60,000+ pixel-wide map.
@@ -1001,6 +1201,7 @@ export default class GameEngine {
     gameEvents.off('crime:performing', this._onCrimePerforming);
     gameEvents.off('politics:start', this._onPoliticsStart);
     gameEvents.off('audio:setMuted', this._onAudioMuteToggle);
+    gameEvents.off('settings:update', this._onSettingsUpdate);
 
     this.cameraRig?.dispose();
     this.physics?.dispose();

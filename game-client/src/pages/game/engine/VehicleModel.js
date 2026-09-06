@@ -25,41 +25,88 @@ export const VEHICLE_CATALOG = [
 ];
 
 const BODY_COLORS = ['#c62828', '#1565c0', '#2e7d32', '#f9a825', '#616161', '#4a148c', '#eceff1', '#212121', '#00838f'];
+// Two-tone accent used for the roof/mirrors/stripe on each vehicle — a
+// contrasting shade of the same body color rather than a second random
+// color, so it always reads as "one vehicle's paint job" instead of
+// clashing.
+function accentOf(color) {
+  return shade(color, 0.35);
+}
+function shade(hex, amt) {
+  const c = new THREE.Color(hex);
+  if (amt >= 0) c.lerp(new THREE.Color('#ffffff'), amt);
+  else c.lerp(new THREE.Color('#000000'), -amt);
+  return `#${c.getHexString()}`;
+}
 
 function wheel(radius, width) {
   const mat = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.7 });
   const geo = new THREE.CylinderGeometry(radius, radius, width, 14);
-  // Bake the "lay the cylinder on its side" rotation into the geometry
-  // itself (not mesh.rotation) so mesh.rotation.z is left free to use as
-  // the pure rolling-spin axis each frame, uncoupled from orientation.
-  geo.rotateZ(Math.PI / 2);
+  // Every chassis in this file is built with LENGTH along local X and
+  // WIDTH along local Z (see e.g. buildCarLike's `new THREE.BoxGeometry(
+  // dims.len, dims.h, dims.w)` — len→X, w→Z). A wheel's axle has to run
+  // along that same width axis (Z) — sideways through the car, the way a
+  // real axle connects the left and right wheels — so the tire's flat
+  // circular face ends up in the X-Y plane, visible from the side.
+  // CylinderGeometry's axis defaults to Y, so it needs a 90° rotation
+  // around X (Y→Z) to land on that axle axis — NOT around Z (which
+  // would send it to X, the LENGTH axis instead, laying the wheel down
+  // face-first toward the front/back of the vehicle: nearly invisible
+  // edge-on from the side, and rolling around the wrong axis entirely).
+  geo.rotateX(Math.PI / 2);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.castShadow = true;
   const hubGeo = new THREE.CylinderGeometry(radius * 0.45, radius * 0.45, width * 1.02, 8);
-  hubGeo.rotateZ(Math.PI / 2);
+  hubGeo.rotateX(Math.PI / 2);
   const hub = new THREE.Mesh(hubGeo, new THREE.MeshStandardMaterial({ color: '#9aa0ab', roughness: 0.4, metalness: 0.5 }));
+  // A few spokes so the wheel doesn't read as a flat gray disc — long
+  // (radial) dimension along Y so they start out pointing "up" from the
+  // hub, thin along X, and exactly as thick as the hub along Z (the
+  // axle axis) — then rotating each one around Z sweeps it to its own
+  // angle around the wheel face.
+  for (let i = 0; i < 5; i++) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.14, radius * 0.9, width * 1.04), new THREE.MeshStandardMaterial({ color: '#5b6270', roughness: 0.5, metalness: 0.5 }));
+    spoke.rotation.z = (i / 5) * Math.PI * 2;
+    hub.add(spoke);
+  }
   mesh.add(hub);
   return mesh;
 }
 
 function glassMat() {
-  return new THREE.MeshStandardMaterial({ color: '#8fd3ff', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.55 });
+  return new THREE.MeshStandardMaterial({ color: '#bfe9ff', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.32, side: THREE.DoubleSide });
 }
 
 function lightMat(color) {
   return new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, roughness: 0.4 });
 }
 
-/** 4-wheeled car/truck/van/suv chassis — proportions vary per `kind`. */
+/**
+ * 4-wheeled car/truck/van/suv chassis — proportions vary per `kind`.
+ *
+ * Sized close to real-world car dimensions (a sedan is roughly 4.5m long
+ * / 1.8m wide / 1.45m tall at the roof) rather than the previous ~2m toy-
+ * scale — the whole point being that PLAYER_HEIGHT (1.75) actually fits
+ * inside the cabin with headroom, instead of poking out through the roof.
+ *
+ * The cabin itself is a real "greenhouse" — a roof panel, a lower sill,
+ * and pillars at the corners — with genuine transparent glass panes
+ * filling the front/rear/left/right gaps, instead of a solid opaque box
+ * with a same-sized translucent box awkwardly co-located inside it (which
+ * is why the driver used to be invisible/hidden while "inside" a car).
+ */
 function buildCarLike(kind, color) {
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.35 });
+  const accent = accentOf(color);
+  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.45 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.35, metalness: 0.45 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: '#161a20', roughness: 0.6, metalness: 0.3 });
 
   const dims = {
-    car: { len: 2.1, w: 0.95, h: 0.55, cabinLen: 1.1, cabinH: 0.42, wheelR: 0.26 },
-    suv: { len: 2.3, w: 1.05, h: 0.72, cabinLen: 1.5, cabinH: 0.5, wheelR: 0.32 },
-    truck: { len: 2.5, w: 1.0, h: 0.55, cabinLen: 0.85, cabinH: 0.45, wheelR: 0.3 },
-    van: { len: 2.4, w: 1.05, h: 0.85, cabinLen: 2.0, cabinH: 0.7, wheelR: 0.3 },
+    car: { len: 4.4, w: 1.82, h: 0.62, cabinLen: 2.15, cabinH: 1.05, cabinOffset: -0.15, wheelR: 0.34, trunk: true },
+    suv: { len: 4.75, w: 1.95, h: 0.85, cabinLen: 2.7, cabinH: 1.15, cabinOffset: -0.05, wheelR: 0.4, trunk: true },
+    truck: { len: 5.3, w: 1.9, h: 0.62, cabinLen: 1.75, cabinH: 1.08, cabinOffset: -0.85, wheelR: 0.38, trunk: false },
+    van: { len: 5.0, w: 1.98, h: 1.15, cabinLen: 3.9, cabinH: 1.4, cabinOffset: 0.2, wheelR: 0.36, trunk: true },
   }[kind];
 
   const chassisY = dims.wheelR + dims.h / 2;
@@ -69,41 +116,131 @@ function buildCarLike(kind, color) {
   chassis.receiveShadow = true;
   g.add(chassis);
 
-  if (kind !== 'truck') {
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen, dims.cabinH, dims.w * 0.94), bodyMat);
-    cabin.position.set(kind === 'van' ? 0 : -dims.len * 0.08, chassisY + dims.h / 2 + dims.cabinH / 2, 0);
-    cabin.castShadow = true;
-    g.add(cabin);
+  // A lower rocker-panel band + a contrasting roof, so the paint job
+  // reads as an actual two-tone design instead of one flat color.
+  const rocker = new THREE.Mesh(new THREE.BoxGeometry(dims.len * 0.98, dims.h * 0.22, dims.w * 1.01), trimMat);
+  rocker.position.set(0, chassisY - dims.h * 0.42, 0);
+  g.add(rocker);
 
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen * 0.92, dims.cabinH * 0.6, dims.w * 0.98), glassMat());
-    glass.position.copy(cabin.position);
-    glass.position.y += dims.cabinH * 0.12;
-    g.add(glass);
-  } else {
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen, dims.cabinH, dims.w * 0.94), bodyMat);
-    cab.position.set(-dims.len * 0.22, chassisY + dims.h / 2 + dims.cabinH / 2, 0);
-    g.add(cab);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen * 0.85, dims.cabinH * 0.6, dims.w * 0.98), glassMat());
-    glass.position.copy(cab.position);
-    g.add(glass);
-    const bedWalls = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3 });
-    const bed = new THREE.Mesh(new THREE.BoxGeometry(dims.len * 0.48, 0.18, dims.w), bedWalls);
-    bed.position.set(dims.len * 0.24, chassisY + dims.h / 2 + 0.09, 0);
-    g.add(bed);
+  const cabinCenterX = kind === 'truck' ? -dims.len * 0.22 : dims.len * dims.cabinOffset * 0.1;
+  const cabinFloorY = chassisY + dims.h / 2;
+  const cabinRoofY = cabinFloorY + dims.cabinH;
+  const cabinHalfLen = dims.cabinLen / 2;
+  const cabinHalfW = (dims.w * 0.94) / 2;
+  const pillarT = 0.05;
+
+  // Roof panel
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen, 0.06, dims.w * 0.96), accentMat);
+  roof.position.set(cabinCenterX, cabinRoofY + 0.03, 0);
+  roof.castShadow = true;
+  g.add(roof);
+
+  // Sill (the solid lower door band the glass sits on top of)
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen, 0.14, dims.w * 0.98), bodyMat);
+  sill.position.set(cabinCenterX, cabinFloorY + 0.07, 0);
+  g.add(sill);
+
+  // 4 corner pillars connecting sill to roof
+  [-1, 1].forEach((lenSide) => {
+    [-1, 1].forEach((wSide) => {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(pillarT, dims.cabinH - 0.14, pillarT), trimMat);
+      pillar.position.set(cabinCenterX + lenSide * (cabinHalfLen - pillarT), cabinFloorY + 0.07 + (dims.cabinH - 0.14) / 2, wSide * (cabinHalfW - pillarT / 2));
+      g.add(pillar);
+    });
+  });
+  // A B-pillar (mid pillar) on cars/suv/van for a realistic 2-window-per-
+  // side look instead of one huge unbroken pane.
+  if (kind !== 'truck') {
+    [-1, 1].forEach((wSide) => {
+      const bPillar = new THREE.Mesh(new THREE.BoxGeometry(pillarT * 0.8, dims.cabinH - 0.14, pillarT * 0.8), trimMat);
+      bPillar.position.set(cabinCenterX, cabinFloorY + 0.07 + (dims.cabinH - 0.14) / 2, wSide * (cabinHalfW - pillarT / 2));
+      g.add(bPillar);
+    });
   }
 
-  const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.16), lightMat('#fff6d0'));
+  // Real glass: front windshield, rear window, and left/right side
+  // windows as separate transparent panes filling the gaps between the
+  // pillars/sill/roof — this is what actually lets you see the driver.
+  const glassInsetY = cabinFloorY + 0.16 + (dims.cabinH - 0.3) / 2;
+  const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.03, dims.cabinH - 0.3, dims.w * 0.9), glassMat());
+  windshield.position.set(cabinCenterX + cabinHalfLen - 0.02, glassInsetY, 0);
+  g.add(windshield);
+  const rearWindow = windshield.clone();
+  rearWindow.position.x = cabinCenterX - cabinHalfLen + 0.02;
+  g.add(rearWindow);
+  [-1, 1].forEach((wSide) => {
+    const sideGlass = new THREE.Mesh(new THREE.BoxGeometry(dims.cabinLen - pillarT * 2.4, dims.cabinH - 0.3, 0.03), glassMat());
+    sideGlass.position.set(cabinCenterX, glassInsetY, wSide * (cabinHalfW - 0.015));
+    g.add(sideGlass);
+  });
+
+  // Side mirrors — small but a big part of "this is a real car" silhouette.
+  [-1, 1].forEach((wSide) => {
+    const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.05), trimMat);
+    mirror.position.set(cabinCenterX + cabinHalfLen - 0.3, cabinFloorY + dims.cabinH * 0.75, wSide * (dims.w / 2 + 0.06));
+    g.add(mirror);
+  });
+
+  if (kind === 'truck') {
+    const bedWalls = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3 });
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(dims.len * 0.48, 0.32, dims.w), bedWalls);
+    bed.position.set(dims.len * 0.24, chassisY + dims.h / 2 + 0.16, 0);
+    bed.castShadow = true;
+    g.add(bed);
+    // Bed floor slats (the corrugated-look pickup bed floor).
+    for (let i = 0; i < 5; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, dims.w * 0.94), trimMat);
+      slat.position.set(dims.len * 0.05 + i * (dims.len * 0.4) / 5, chassisY + dims.h / 2 + 0.33, 0);
+      g.add(slat);
+    }
+  }
+
+  // Trunk — a separate hinged panel at the rear on cars/SUVs/vans, opened
+  // by GameEngine like a door/gate (see WeaponSystem/BuildingBuilder's
+  // hinge pattern). Sedans/SUVs: a rear trunk lid. Vans: rear doors.
+  let trunkHinge = null;
+  if (dims.trunk) {
+    trunkHinge = new THREE.Group();
+    trunkHinge.position.set(-dims.len / 2 + 0.02, chassisY + dims.h * 0.35, 0);
+    trunkHinge.userData.isTrunk = true;
+    g.add(trunkHinge);
+    const trunkLid = new THREE.Mesh(new THREE.BoxGeometry(0.05, dims.h * 0.65, dims.w * 0.92), bodyMat);
+    trunkLid.position.set(0, dims.h * 0.02, 0);
+    trunkLid.castShadow = true;
+    trunkHinge.add(trunkLid);
+  }
+
+  const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.11, 0.2), lightMat('#fff6d0'));
   hl1.position.set(dims.len / 2 - 0.02, chassisY, dims.w * 0.32);
   g.add(hl1);
   const hl2 = hl1.clone();
   hl2.position.z = -dims.w * 0.32;
   g.add(hl2);
-  const tl1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.14), lightMat('#dc2626'));
+  const tl1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.11, 0.17), lightMat('#dc2626'));
   tl1.position.set(-dims.len / 2 + 0.02, chassisY, dims.w * 0.32);
   g.add(tl1);
   const tl2 = tl1.clone();
   tl2.position.z = -dims.w * 0.32;
   g.add(tl2);
+
+  // A door-seam line on each flank — purely cosmetic, but it's the
+  // difference between "one smooth block" and "a car with actual doors".
+  [-1, 1].forEach((wSide) => {
+    [0.18, -0.02].forEach((seamX) => {
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.015, dims.h * 0.7, 0.015), trimMat);
+      seam.position.set(dims.len * seamX, chassisY, wSide * (dims.w / 2 + 0.006));
+      g.add(seam);
+    });
+  });
+
+  // A racing stripe on roughly half of all vehicles (per-instance, not
+  // per-kind) — two parked "Port Sedans" next to each other shouldn't
+  // look like the exact same car just because they share a body shape.
+  if (Math.random() < 0.5) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(dims.len * 0.97, 0.012, dims.w * 0.16), accentMat);
+    stripe.position.set(0, chassisY + dims.h / 2 + 0.007, 0);
+    g.add(stripe);
+  }
 
   const wheels = { frontLeft: null, frontRight: null, rearLeft: null, rearRight: null };
   const wheelW = dims.w * 0.16;
@@ -124,7 +261,20 @@ function buildCarLike(kind, color) {
     wheels[name] = { pivot, mesh: w };
   });
 
-  return { group: g, wheels, kind, height: dims.h + dims.wheelR * 2, seatY: chassisY + dims.h * 0.4, seatX: -dims.len * 0.12 };
+  return {
+    group: g,
+    wheels,
+    kind,
+    length: dims.len,
+    width: dims.w,
+    height: dims.h + dims.wheelR * 2,
+    // Driver hip position: on the sill floor, centered in the cabin
+    // (slightly toward the front for trucks/vans whose cabin isn't
+    // centered on the chassis), with a small margin above the floor.
+    seatY: cabinFloorY + 0.08,
+    seatX: cabinCenterX,
+    trunkHinge,
+  };
 }
 
 /** 2-wheeled bike/scooter/motorbike frame — a distinct build per `frame`
@@ -137,9 +287,14 @@ function buildBikeLike(kind, frame, color) {
   const metalPipe = new THREE.MeshStandardMaterial({ color: '#3a3f47', roughness: 0.4, metalness: 0.6 });
 
   const isMotorbike = frame === 'motorbike';
-  const wheelR = isMotorbike ? 0.32 : frame === 'stepthrough' ? 0.26 : 0.33;
-  const len = isMotorbike ? 1.85 : frame === 'stepthrough' ? 1.55 : 1.7;
-  const seatH = wheelR + (isMotorbike ? 0.46 : 0.5);
+  // Modest ~20% size-up to match the now much-larger cars — real bicycle/
+  // scooter/motorbike wheel radii and lengths were already close to
+  // realistic, so this is a proportion nudge, not a full redesign like
+  // the car-like chassis above needed.
+  const BIKE_SCALE = 1.2;
+  const wheelR = (isMotorbike ? 0.32 : frame === 'stepthrough' ? 0.26 : 0.33) * BIKE_SCALE;
+  const len = (isMotorbike ? 1.85 : frame === 'stepthrough' ? 1.55 : 1.7) * BIKE_SCALE;
+  const seatH = wheelR + (isMotorbike ? 0.46 : 0.5) * BIKE_SCALE;
 
   const tube = (fromX, fromY, toX, toY, radius = 0.018) => {
     const dx = toX - fromX;
@@ -253,7 +408,7 @@ function buildBikeLike(kind, frame, color) {
       new THREE.CylinderGeometry(wheelR * 1.12, wheelR * 1.12, 0.05, 12, 1, false, Math.PI * 0.15, Math.PI * 0.7),
       fenderMat
     );
-    fender.rotation.z = Math.PI / 2;
+    fender.rotation.x = Math.PI / 2;
     fender.position.set(axleX, wheelR, 0);
     g.add(fender);
   });
@@ -275,7 +430,7 @@ function buildBikeLike(kind, frame, color) {
   wheels.rearLeft = { pivot: rearPivot, mesh: wRear };
   wheels.rearRight = wheels.rearLeft;
 
-  return { group: g, wheels, kind, height: seatH + 0.2, seatY: seatH };
+  return { group: g, wheels, kind, length: len, width: 0.5, height: seatH + 0.2, seatY: seatH, seatX: seatPostX };
 }
 
 export function buildVehicle(vehicleKey) {
@@ -309,7 +464,22 @@ export function buildVehicle(vehicleKey) {
     wheels: built.wheels,
     kind: built.kind,
     height: built.height,
-    seatHeight: built.height * 0.58,
+    // seatY is already an absolute ground-relative height computed from
+    // the actual cabin/seat geometry above (cabin floor + margin for
+    // cars, top-of-seat for bikes) — not a crude fraction of overall
+    // vehicle height, which is what used to leave the driver sitting
+    // essentially on the roof.
+    seatHeight: built.seatY,
+    // seatX is an offset along the model's local "front" axis (inner
+    // +X, before the -90° rotation below) — once rotated, that axis
+    // becomes the OUTER group's local +Z, i.e. the same forward axis
+    // `heading` already points along. Callers combine this with heading
+    // via (sin(heading), cos(heading)) to place the driver correctly
+    // fore/aft within the cabin, not just at the vehicle's origin.
+    seatForwardOffset: built.seatX || 0,
+    length: built.length || 2,
+    width: built.width || 1,
+    trunkHinge: built.trunkHinge || null,
     def,
   };
 }

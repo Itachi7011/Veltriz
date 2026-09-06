@@ -19,6 +19,11 @@ export class AudioSystem {
     this.musicGain = null;
     this.sfxGain = null;
     this.muted = false;
+    // 0..1 user-controlled levels (Settings panel), independent of mute —
+    // muting still fully silences output, these just scale the "on" level.
+    this.masterVolume = 0.8;
+    this.musicVolume = 0.14;
+    this.sfxVolume = 0.5;
     this._musicNodes = [];
   }
 
@@ -29,15 +34,15 @@ export class AudioSystem {
     this.ctx = new Ctx();
 
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.8;
+    this.master.gain.value = this.muted ? 0 : this.masterVolume;
     this.master.connect(this.ctx.destination);
 
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.14;
+    this.musicGain.gain.value = this.musicVolume;
     this.musicGain.connect(this.master);
 
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.5;
+    this.sfxGain.gain.value = this.sfxVolume;
     this.sfxGain.connect(this.master);
 
     this._startAmbientMusic();
@@ -45,7 +50,25 @@ export class AudioSystem {
 
   setMuted(muted) {
     this.muted = muted;
-    if (this.master) this.master.gain.setTargetAtTime(muted ? 0 : 0.8, this.ctx.currentTime, 0.05);
+    if (this.master) this.master.gain.setTargetAtTime(muted ? 0 : this.masterVolume, this.ctx.currentTime, 0.05);
+  }
+
+  /** @param {number} v 0..1 */
+  setMasterVolume(v) {
+    this.masterVolume = Math.max(0, Math.min(1, v));
+    if (this.master && !this.muted) this.master.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.05);
+  }
+
+  /** @param {number} v 0..1 */
+  setMusicVolume(v) {
+    this.musicVolume = Math.max(0, Math.min(1, v));
+    if (this.musicGain) this.musicGain.gain.setTargetAtTime(this.musicVolume, this.ctx.currentTime, 0.05);
+  }
+
+  /** @param {number} v 0..1 */
+  setSfxVolume(v) {
+    this.sfxVolume = Math.max(0, Math.min(1, v));
+    if (this.sfxGain) this.sfxGain.gain.setTargetAtTime(this.sfxVolume, this.ctx.currentTime, 0.05);
   }
 
   _startAmbientMusic() {

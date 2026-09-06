@@ -19,8 +19,8 @@ const AI_DRIVER_FRACTION = 0.45;
 const SPAWN_RADIUS = [18, 110];
 const DESPAWN_RADIUS = 160;
 const RETRY_SPAWN_ATTEMPTS = 10;
-const ENTER_DIST = 2.6;
-const JACK_DIST = 3.2;
+const ENTER_DIST = 4.4; // was 2.6 — vehicles got real-world-sized (up to ~5m long), so the old distance made the far end of a van or truck unreachable
+const JACK_DIST = 4.8;
 const AI_WANDER_RADIUS = 70;
 
 function randomFrom(arr) {
@@ -163,12 +163,22 @@ export class VehicleSystem {
     this.active.forEach((entry) => {
       if (entry === this.drivenEntry) {
         this._syncVisual(entry);
+        this._syncTrunk(entry, dt);
         return;
       }
       if (entry.aiDriven) this._updateAiDriver(entry, dt, now);
       this._syncVisual(entry);
+      this._syncTrunk(entry, dt);
       if (entry.driverRig) this._syncDriver(entry, now);
     });
+  }
+
+  /** Eases a vehicle's trunk hinge toward open/closed — same lerp-to-
+   * target pattern GameEngine uses for building doors/gates. */
+  _syncTrunk(entry, dt) {
+    if (!entry.trunkHinge) return;
+    const target = entry.trunkOpen ? -1.9 : 0;
+    entry.trunkHinge.rotation.y += (target - entry.trunkHinge.rotation.y) * Math.min(1, dt * 3.2);
   }
 
   _updateAiDriver(entry, dt, now) {
@@ -196,7 +206,22 @@ export class VehicleSystem {
 
   _syncDriver(entry, now) {
     const t = entry.controller.getTransform();
-    entry.driverRig.group.position.set(t.x, t.y + entry.seatHeight, t.z);
+    // seatForwardOffset places the driver at the actual seat position
+    // within the cabin (not the vehicle's geometric center) — projected
+    // into world space along the vehicle's own forward axis, same
+    // (sin, cos) basis as every other heading-based position in the game.
+    const fwd = entry.seatForwardOffset || 0;
+    // entry.seatHeight is where the character's HIPS should end up
+    // (roughly the seat cushion height) — but the rig's root sits
+    // `hipOffset` BELOW its own hips (see buildCharacter's comment), so
+    // the root itself has to be placed that far below the seat, or the
+    // driver ends up floating a hip-height above the actual seat.
+    const hipOffset = entry.driverRig.hipOffset || 0;
+    entry.driverRig.group.position.set(
+      t.x + Math.sin(t.heading) * fwd,
+      t.y + entry.seatHeight - hipOffset,
+      t.z + Math.cos(t.heading) * fwd
+    );
     entry.driverRig.group.rotation.y = t.heading + Math.PI;
     entry.driverRig.group.visible = entry.group.visible;
     // animateCharacter runs FIRST (its idle branch drives the subtle
@@ -221,10 +246,11 @@ export class VehicleSystem {
       if (w) w.pivot.rotation.y = t.steerAngle;
     });
     Object.values(entry.wheels).forEach((w) => {
-      // The tire geometry's rolling axis is baked onto local X at
-      // creation (see VehicleModel's wheel()) — X is the correct spin
-      // axis, not Z.
-      if (w?.mesh) w.mesh.rotation.x = t.wheelRoll;
+      // The tire geometry's axle axis is baked onto local Z at creation
+      // (see VehicleModel's wheel()) — Z is the vehicle's WIDTH axis
+      // (matches every chassis's own len→X / width→Z convention), so Z
+      // is the correct roll/spin axis here, not X.
+      if (w?.mesh) w.mesh.rotation.z = t.wheelRoll;
     });
   }
 
@@ -267,6 +293,39 @@ export class VehicleSystem {
     return nearest;
   }
 
+  /**
+   * Every active, currently-visible vehicle except the one the player is
+   * driving (see PhysicsController's own comment for why that one's
+   * excluded), in the {x,z,heading,halfLen,halfWid} shape
+   * PhysicsController.setVehicleColliders() expects. Called once per
+   * frame by GameEngine — this is what makes vehicles solid to walking
+   * players instead of walk-through-able.
+   */
+  getVehicleColliders() {
+    const list = [];
+    this.active.forEach((v) => {
+      if (v === this.drivenEntry || !v.group.visible) return;
+      const t = v.controller.getTransform();
+      list.push({
+        x: t.x,
+        z: t.z,
+        heading: t.heading,
+        halfLen: (v.length || 2) / 2 + 0.05,
+        halfWid: (v.width || 1) / 2 + 0.05,
+      });
+    });
+    return list;
+  }
+
+  /** Opens/closes the trunk (or rear doors, on a van) of a car-like
+   * vehicle — melee/no-op on bikes, which don't have one. Returns the
+   * new open state, or null if this vehicle has no trunk. */
+  toggleTrunk(entry) {
+    if (!entry || !entry.trunkHinge) return null;
+    entry.trunkOpen = !entry.trunkOpen;
+    return entry.trunkOpen;
+  }
+
   enter(entry) {
     entry.occupied = true;
     entry.group.visible = true;
@@ -292,8 +351,14 @@ export class VehicleSystem {
     entry.occupied = false;
     entry.controller.speed = 0;
     const t = entry.controller.getTransform();
-    const sideX = t.x + Math.cos(t.heading) * 1.6;
-    const sideZ = t.z - Math.sin(t.heading) * 1.6;
+    // Offset needs to clear the vehicle's actual half-width (now up to
+    // ~1m for a van) plus the player's own collision radius, or the
+    // player spawns back inside the vehicle's new (correctly-registered,
+    // see PhysicsController.setVehicleColliders) collider and immediately
+    // gets pushed around by it.
+    const clearance = (entry.width || 1) / 2 + 0.9;
+    const sideX = t.x + Math.cos(t.heading) * clearance;
+    const sideZ = t.z - Math.sin(t.heading) * clearance;
     this.drivenEntry = null;
     return { x: sideX, z: sideZ, heading: t.heading };
   }

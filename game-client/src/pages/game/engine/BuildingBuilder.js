@@ -10,6 +10,169 @@ import * as THREE from 'three';
 
 const canvasCache = new Map();
 
+// ---------------------------------------------------------------------
+// House size + walk-in interior geometry constants — shared with
+// PhysicsController.js (imported there) so the visual walls/doorway and
+// the collision walls/doorway can never drift out of sync with each
+// other. Buildings/shops are untouched (still the solid-box +
+// proximity-panel model they always were) — this only applies to houses.
+// ---------------------------------------------------------------------
+
+// Houses were rendered at the same 0.92 footprint factor as every other
+// building, which — combined with never having a real doorway gap in
+// their collider — made them too small to walk into even before that
+// gap existed. 1.5x is as large as they can safely go: worldData.js's
+// house-placement algorithm (see HOUSE_GAP in worldData.js) already
+// leaves each house a flat 15px (1.2 world-unit) clearance buffer to its
+// neighbors on every side, and this stays comfortably inside that buffer
+// even for two of the largest houses placed directly next to each other.
+export const HOUSE_SIZE_MULTIPLIER = 1.5;
+export const HOUSE_WALL_THICKNESS = 0.22;
+export const HOUSE_FLOOR_CLEARANCE = 2.35; // interior ceiling height per floor — enough for the tallest driver to stand and walk normally
+
+/** Half-width of the doorway gap carved into a house's front wall —
+ * capped so even the smallest houses get a comfortably player-sized gap
+ * (PLAYER_RADIUS is 0.34 in PhysicsController.js), and scaled up a bit
+ * for wider houses so the opening still looks proportional. */
+export function houseDoorHalfWidth(width) {
+  // Player collision radius is 0.34 (PhysicsController.PLAYER_RADIUS) —
+  // a 0.62 minimum half-width only left ~0.28 of clearance on each side,
+  // which is workable in theory but felt "too small to enter" in
+  // practice (easy to clip the frame if not walking dead-center). 0.95
+  // minimum roughly doubles that margin.
+  return Math.min(Math.max(0.95, width * 0.11), 1.3);
+}
+
+/**
+ * The 4-6 wall-segment colliders (front-left, front-right flanking the
+ * doorway, back, left, right) that make up a house's exterior — replacing
+ * what used to be one solid filled rectangle with no way in. Pure
+ * geometry math, no THREE.js objects, so PhysicsController (which has no
+ * reason to depend on Three.js scene-graph code) can import and use this
+ * directly for collision, while BuildingBuilder below uses the exact same
+ * numbers to build the matching visual walls.
+ *
+ * @param {{x:number,y:number,width:number,height:number}} h a house from
+ *   mapConfig.houses (map-space x/y/width/height, NOT world units yet)
+ * @param {number} scale world-units-per-map-pixel (WORLD_SCALE)
+ */
+export function computeHouseWalls(h, scale) {
+  const width = Math.max(3, h.width * scale * HOUSE_SIZE_MULTIPLIER);
+  const depth = Math.max(3, h.height * scale * HOUSE_SIZE_MULTIPLIER);
+  const halfW = width / 2;
+  const halfD = depth / 2;
+  const t = HOUSE_WALL_THICKNESS;
+  const doorHalfW = houseDoorHalfWidth(width);
+  const cx = h.x * scale;
+  const cz = h.y * scale;
+  const frontHalfSeg = (halfW - doorHalfW) / 2;
+
+  const segments = [
+    { key: 'back', x: cx, z: cz - halfD + t / 2, halfW, halfD: t / 2, len: width },
+    { key: 'left', x: cx - halfW + t / 2, z: cz, halfW: t / 2, halfD, len: depth },
+    { key: 'right', x: cx + halfW - t / 2, z: cz, halfW: t / 2, halfD, len: depth },
+  ];
+  if (frontHalfSeg > 0.12) {
+    segments.push({ key: 'frontLeft', x: cx - doorHalfW - frontHalfSeg, z: cz + halfD - t / 2, halfW: frontHalfSeg, halfD: t / 2, len: frontHalfSeg * 2 });
+    segments.push({ key: 'frontRight', x: cx + doorHalfW + frontHalfSeg, z: cz + halfD - t / 2, halfW: frontHalfSeg, halfD: t / 2, len: frontHalfSeg * 2 });
+  }
+
+  return { width, depth, halfW, halfD, wallThickness: t, doorHalfW, cx, cz, segments };
+}
+
+/**
+ * World-space footprint + vertical span of the staircase(s) a house
+ * needs for its upper floor(s) — one entry per floor transition (a
+ * 3-floor mansion gets two: ground→1 and 1→2). Pure geometry, shared by
+ * BuildingBuilder's visual step meshes below and PhysicsController's
+ * ramp-height physics, so a player's feet always match what they see.
+ *
+ * Modeled as ONE smooth incline per flight for physics purposes (the
+ * visible steps are just geometry riding on top of that incline) rather
+ * than per-step collision — much simpler and still reads correctly,
+ * since the player's Y just needs to track the flight's slope, not
+ * literally catch on each stair nose.
+ */
+export function computeHouseStairs(h, scale) {
+  const walls = computeHouseWalls(h, scale);
+  const style = classifyHouse(h);
+  const floors = style.floors;
+  if (floors < 2) return [];
+
+  const floorHeight = HOUSE_FLOOR_CLEARANCE + HOUSE_WALL_THICKNESS;
+  const t = walls.wallThickness;
+  const stairWidth = 1.1;
+  const maxRun = Math.min(4.2, (walls.depth - t * 2) * 0.62);
+  const treadTarget = 0.27;
+  const stepCount = Math.max(6, Math.round(maxRun / treadTarget));
+  const run = maxRun;
+  // Hugs the interior of the left wall, starting near the front (door)
+  // side and climbing back toward the rear of the house.
+  const localX = -walls.halfW + t + stairWidth / 2 + 0.15;
+  const localZFront = walls.halfD - t - 0.3;
+
+  const flights = [];
+  for (let f = 1; f < floors; f++) {
+    flights.push({
+      x: walls.cx + localX,
+      z: walls.cz + (localZFront - run / 2),
+      halfW: stairWidth / 2,
+      halfD: run / 2,
+      startZ: walls.cz + localZFront,
+      fromY: (f - 1) * floorHeight,
+      toY: f * floorHeight,
+      stepCount,
+      run,
+      width: stairWidth,
+      localX,
+      localZFront,
+      floorIndex: f,
+    });
+  }
+  return flights;
+}
+
+/**
+ * The flat, walkable floor area of every floor ABOVE the ground floor —
+ * ground floor needs no registration (0 is already the default "normal
+ * ground" height everywhere), but floor 2+ needs an explicit flat
+ * "platform" so a player who's just climbed the stairs doesn't fall
+ * straight through the floor the instant they step off the staircase's
+ * own footprint. Deliberately covers the FULL interior rectangle
+ * (including the area technically over the stairwell) rather than
+ * carving out the stairwell gap the way the visual mesh does — see
+ * PhysicsController._groundHeightAt's tolerance logic for why that
+ * overlap is harmless (it naturally only "wins" once the player is
+ * actually up at that height, not while still climbing through it).
+ */
+export function computeHouseFloorPlatforms(h, scale) {
+  const walls = computeHouseWalls(h, scale);
+  const style = classifyHouse(h);
+  const floors = style.floors;
+  if (floors < 2) return [];
+  const floorHeight = HOUSE_FLOOR_CLEARANCE + HOUSE_WALL_THICKNESS;
+  const t = walls.wallThickness;
+  const platforms = [];
+  for (let f = 1; f < floors; f++) {
+    platforms.push({
+      x: walls.cx,
+      z: walls.cz,
+      halfW: walls.halfW - t,
+      halfD: walls.halfD - t,
+      // Represented with the exact same {startZ, run, fromY, toY} shape
+      // as a staircase flight, just with fromY === toY and a run of 1 —
+      // so PhysicsController's ramp-height formula handles both a sloped
+      // flight and a flat platform with the same one code path, no
+      // special-casing needed.
+      startZ: walls.cz,
+      run: 1,
+      fromY: f * floorHeight,
+      toY: f * floorHeight,
+    });
+  }
+  return platforms;
+}
+
 function shadeColor(hex, amt) {
   const c = new THREE.Color(hex);
   if (amt >= 0) c.lerp(new THREE.Color('#ffffff'), amt);
@@ -587,6 +750,201 @@ function addArchDoor(group, doorW, doorH, depth) {
 }
 
 /**
+ * Simple, low-poly furniture placed in a house's interior so a room
+ * reads as "lived in" rather than an empty shell — a bed against the
+ * back wall, a table+chairs near the middle, deterministically varied
+ * per house (same seeding approach as classifyHouse/face genetics) so
+ * neighboring houses' interiors don't look identical.
+ */
+function addHouseFurniture(group, { width, depth, seed }) {
+  let s = 0;
+  for (let i = 0; i < seed.length; i++) s = (s * 31 + seed.charCodeAt(i)) >>> 0;
+  const rnd = () => {
+    s = (s * 1103515245 + 12345) >>> 0;
+    return (s >>> 8) / 16777216;
+  };
+
+  const woodMat = new THREE.MeshStandardMaterial({ color: '#8a5a34', roughness: 0.7 });
+  const fabricMat = new THREE.MeshStandardMaterial({ color: ['#7c3aed', '#0ea5e9', '#ef4444', '#22c55e', '#f59e0b'][Math.floor(rnd() * 5)], roughness: 0.85 });
+
+  // Bed, back-left corner.
+  const bedW = Math.min(1.4, width * 0.24);
+  const bedL = Math.min(2.0, depth * 0.28);
+  const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(bedW, 0.32, bedL), woodMat);
+  bedFrame.position.set(-width / 2 + bedW / 2 + 0.35, 0.16, -depth / 2 + bedL / 2 + 0.35);
+  bedFrame.castShadow = true;
+  group.add(bedFrame);
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(bedW * 0.94, 0.14, bedL * 0.96), fabricMat);
+  mattress.position.set(bedFrame.position.x, 0.39, bedFrame.position.z);
+  group.add(mattress);
+  const pillow = new THREE.Mesh(new THREE.BoxGeometry(bedW * 0.8, 0.1, bedL * 0.18), new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.8 }));
+  pillow.position.set(bedFrame.position.x, 0.47, bedFrame.position.z - bedL * 0.36);
+  group.add(pillow);
+
+  // Table + chairs, roughly centered.
+  const tableSize = Math.min(1.1, width * 0.16);
+  const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(tableSize / 2, tableSize / 2, 0.05, 12), woodMat);
+  tableTop.position.set(width * 0.14, 0.42, depth * 0.1);
+  tableTop.castShadow = true;
+  group.add(tableTop);
+  const tableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8), woodMat);
+  tableLeg.position.set(tableTop.position.x, 0.2, tableTop.position.z);
+  group.add(tableLeg);
+  [0, 1].forEach((i) => {
+    const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 0.35), woodMat);
+    const angle = i * Math.PI;
+    chairSeat.position.set(tableTop.position.x + Math.sin(angle) * tableSize * 0.9, 0.28, tableTop.position.z + Math.cos(angle) * tableSize * 0.9);
+    group.add(chairSeat);
+    const chairBack = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.34, 0.05), woodMat);
+    chairBack.position.set(chairSeat.position.x + Math.sin(angle) * 0.16, 0.44, chairSeat.position.z + Math.cos(angle) * 0.16);
+    group.add(chairBack);
+  });
+
+  // A rug under the table for a bit of interior color/warmth.
+  const rug = new THREE.Mesh(new THREE.CylinderGeometry(tableSize * 1.15, tableSize * 1.15, 0.02, 16), fabricMat);
+  rug.position.set(tableTop.position.x, 0.04, tableTop.position.z);
+  group.add(rug);
+}
+
+/**
+ * A real climbable staircase (visible steps riding on the smooth incline
+ * computeHouseStairs() also describes for physics) plus a simple railing,
+ * for every floor transition a multi-storey house has.
+ */
+function addStaircase(group, flight) {
+  const { stepCount, run, width: stairWidth, fromY, toY, localX, localZFront } = flight;
+  const stepMat = new THREE.MeshStandardMaterial({ color: '#7a6a56', roughness: 0.75 });
+  const railMat = new THREE.MeshStandardMaterial({ color: '#3f3f46', roughness: 0.5, metalness: 0.3 });
+  const treadDepth = run / stepCount;
+  const riser = (toY - fromY) / stepCount;
+
+  for (let i = 0; i < stepCount; i++) {
+    const stepY = fromY + riser * (i + 1);
+    const stepZ = localZFront - treadDepth * i - treadDepth / 2;
+    const step = new THREE.Mesh(new THREE.BoxGeometry(stairWidth, Math.max(0.05, riser), treadDepth * 1.02), stepMat);
+    step.position.set(localX, stepY - riser / 2, stepZ);
+    step.castShadow = true;
+    step.receiveShadow = true;
+    group.add(step);
+  }
+
+  // A simple railing along the open (inner) edge of the flight.
+  const railPost1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.85, 0.04), railMat);
+  railPost1.position.set(localX + stairWidth / 2 + 0.03, fromY + 0.42, localZFront);
+  group.add(railPost1);
+  const railPost2 = railPost1.clone();
+  railPost2.position.set(localX + stairWidth / 2 + 0.03, toY + 0.42, localZFront - run);
+  group.add(railPost2);
+  const railTop = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, Math.hypot(run, toY - fromY) + 0.2), railMat);
+  railTop.position.set(localX + stairWidth / 2 + 0.03, (fromY + toY) / 2 + 0.42, localZFront - run / 2);
+  railTop.rotation.x = Math.atan2(toY - fromY, run);
+  group.add(railTop);
+}
+
+/**
+ * Replaces the single solid exterior box every other structure uses with
+ * a real walk-in shell: wall segments with a doorway gap (matching
+ * computeHouseWalls exactly, so the collider and the visible wall are
+ * the same rectangle), an interior floor, simple furniture, and — for
+ * multi-floor houses — floor platforms with real connecting staircases
+ * (see computeHouseStairs/addStaircase above).
+ */
+function buildHouseShell(group, opts) {
+  const { b, scale, width, depth, wallHeight, floors, floorHeight, frontBackTex, sideTex, wallMat, plainMat } = opts;
+  const halfW = width / 2;
+  const halfD = depth / 2;
+  const t = HOUSE_WALL_THICKNESS;
+  const doorHalfW = houseDoorHalfWidth(width);
+  const frontHalfSeg = (halfW - doorHalfW) / 2;
+
+  const interiorWallMat = new THREE.MeshStandardMaterial({ color: '#efe9dd', roughness: 0.88 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: '#a9814f', roughness: 0.75 });
+  const ceilingMat = new THREE.MeshStandardMaterial({ color: '#f5f2ea', roughness: 0.92 });
+
+  const addWallSegment = (cx, cz, sizeX, sizeZ, outwardAxis, tex) => {
+    const geo = new THREE.BoxGeometry(sizeX, wallHeight, sizeZ);
+    const outMat = wallMat(tex);
+    // BoxGeometry material order: [+X, -X, +Y(top), -Y(bottom), +Z, -Z]
+    const mats = [interiorWallMat, interiorWallMat, plainMat, plainMat, interiorWallMat, interiorWallMat];
+    if (outwardAxis === 'x+') mats[0] = outMat;
+    else if (outwardAxis === 'x-') mats[1] = outMat;
+    else if (outwardAxis === 'z+') mats[4] = outMat;
+    else if (outwardAxis === 'z-') mats[5] = outMat;
+    const mesh = new THREE.Mesh(geo, mats);
+    mesh.position.set(cx, wallHeight / 2, cz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+
+  addWallSegment(0, -halfD + t / 2, width, t, 'z-', frontBackTex.clone());
+  addWallSegment(-halfW + t / 2, 0, t, depth, 'x-', sideTex.clone());
+  addWallSegment(halfW - t / 2, 0, t, depth, 'x+', sideTex.clone());
+  if (frontHalfSeg > 0.12) {
+    addWallSegment(-(doorHalfW + frontHalfSeg), halfD - t / 2, frontHalfSeg * 2, t, 'z+', frontBackTex.clone());
+    addWallSegment(doorHalfW + frontHalfSeg, halfD - t / 2, frontHalfSeg * 2, t, 'z+', frontBackTex.clone());
+  }
+
+  const groundFloor = new THREE.Mesh(new THREE.BoxGeometry(width - t * 2, 0.06, depth - t * 2), floorMat);
+  groundFloor.position.set(0, 0.03, 0);
+  groundFloor.receiveShadow = true;
+  group.add(groundFloor);
+
+  const topCeiling = new THREE.Mesh(new THREE.BoxGeometry(width - t, 0.05, depth - t), ceilingMat);
+  topCeiling.position.set(0, wallHeight - 0.025, 0);
+  group.add(topCeiling);
+
+  addHouseFurniture(group, { width, depth, seed: b.id || b.houseType || b.name || 'house' });
+
+  if (floors >= 2) {
+    const stairs = computeHouseStairs(b, scale);
+    stairs.forEach((flight) => {
+      // flight.localX / flight.localZFront are already this group's
+      // LOCAL coordinates (computeHouseStairs keeps both the world-space
+      // x/z PhysicsController needs AND the local offsets BuildingBuilder
+      // needs, computed from the same halfW/halfD/wallThickness numbers
+      // either way — so the visual steps and the physics incline can
+      // never disagree about where the staircase actually is).
+      addStaircase(group, flight);
+
+      const platformY = flight.toY;
+      // Leave a stairwell gap in the platform matching the flight's
+      // width so the stairs actually lead somewhere instead of walking
+      // into the underside of a solid ceiling.
+      const gapHalfW = flight.width / 2 + 0.15;
+      const gapX = flight.localX;
+      const fullMinX = -halfW + t;
+      const fullMaxX = halfW - t;
+      // One piece covering the area to the right of the stairwell gap
+      // (spans the full depth), and — if there's room — one covering the
+      // sliver to the left of it, so the platform is solid everywhere
+      // except directly above the stairs.
+      const rightPieceMinX = gapX + gapHalfW;
+      if (rightPieceMinX < fullMaxX) {
+        const w = fullMaxX - rightPieceMinX;
+        const piece = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, depth - t * 2), floorMat);
+        piece.position.set(rightPieceMinX + w / 2, platformY, 0);
+        piece.receiveShadow = true;
+        piece.castShadow = true;
+        group.add(piece);
+      }
+      const leftPieceMaxX = gapX - gapHalfW;
+      if (leftPieceMaxX > fullMinX) {
+        const w = leftPieceMaxX - fullMinX;
+        const piece = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, depth - t * 2), floorMat);
+        piece.position.set(fullMinX + w / 2, platformY, 0);
+        piece.receiveShadow = true;
+        piece.castShadow = true;
+        group.add(piece);
+      }
+      // Simple furniture on the upper floor too, offset so it doesn't
+      // overlap the ground floor's set (different pseudo-seed).
+      addHouseFurniture(group, { width, depth, seed: `${b.id || b.houseType || 'house'}_f${flight.floorIndex}` });
+    });
+  }
+}
+
+/**
  * A decorative yard fence around a house's plot, with a swinging gate
  * centered on the front (door-facing) side. Deliberately NOT registered
  * as a physics collider — it's built purely so the player can visually
@@ -608,7 +966,7 @@ function addFenceAndGate(group, width, depth, tier) {
 
   const halfW = width / 2 + spec.setback;
   const halfD = depth / 2 + spec.setback;
-  const gateW = Math.min(1.3, Math.max(0.9, width * 0.22));
+  const gateW = Math.min(1.8, Math.max(1.3, width * 0.22));
 
   const addPost = (x, z, h = spec.postH) => {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, h, 6), fenceMat);
@@ -773,13 +1131,29 @@ export function buildStructure(b, opts) {
   const { scale, zoneKey, kind = 'building' } = opts;
   const style = kind === 'house' ? { ...DEFAULT_STYLE, ...classifyHouse(b), accent: b.color || '#7c3aed' } : TYPE_STYLE[b.type] || DEFAULT_STYLE;
 
-  const width = Math.max(3, (b.width * scale) * 0.92);
-  const depth = Math.max(3, (b.height * scale) * 0.92);
+  // Houses get a bigger footprint multiplier than other buildings (see
+  // HOUSE_SIZE_MULTIPLIER's comment) specifically so a character can
+  // walk inside one — computeHouseWalls() below uses this exact same
+  // multiplier, so the visual walls and the physics collider walls are
+  // guaranteed to describe the same rectangle.
+  const width = kind === 'house' ? Math.max(3, b.width * scale * HOUSE_SIZE_MULTIPLIER) : Math.max(3, (b.width * scale) * 0.92);
+  const depth = kind === 'house' ? Math.max(3, b.height * scale * HOUSE_SIZE_MULTIPLIER) : Math.max(3, (b.height * scale) * 0.92);
 
   const floors = style.floors;
   const baseColor = kind === 'house' ? b.color || '#4a5170' : zoneWallColor(zoneKey);
 
-  const floorHeight = kind === 'house' ? 0.95 : 1.05;
+  // Houses need real room-height floors now that they're walkable
+  // interiors, not just a decorative box — HOUSE_FLOOR_CLEARANCE (2.35)
+  // interior height + the wall/ceiling thickness below.
+  // Buildings' per-floor height (1.05) used to be shorter than the
+  // character itself (1.75, see PLAYER_HEIGHT) — harmless while doors
+  // were purely decorative, but it's the real reason a properly
+  // human-sized door (see doorW/doorH below) couldn't fit: there wasn't
+  // a floor's worth of wall tall enough to put one in. 2.2 is a normal
+  // single-storey height with room for a real doorway plus header space
+  // above it, without being as tall as houses' own 2.57 (kept slightly
+  // shorter so the two aren't visually identical).
+  const floorHeight = kind === 'house' ? HOUSE_FLOOR_CLEARANCE + HOUSE_WALL_THICKNESS : 2.2;
   const wallHeight = floors * floorHeight;
 
   const group = new THREE.Group();
@@ -814,11 +1188,33 @@ export function buildStructure(b, opts) {
     : [wallMat(sideTex.clone()), wallMat(sideTex.clone()), plainMat, plainMat, wallMat(frontBackTex), wallMat(frontBackTex.clone())];
 
   const geo = new THREE.BoxGeometry(width, wallHeight, depth);
-  const walls = new THREE.Mesh(geo, materials);
-  walls.position.y = wallHeight / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
-  group.add(walls);
+  if (kind === 'house') {
+    // Real walk-in shell: separate wall segments with a doorway gap and
+    // an actual interior (floor, furnished rooms, stairs to any upper
+    // floors) — see buildHouseShell(). Deliberately NOT the single solid
+    // box every other structure uses, since that box had no way in.
+    buildHouseShell(group, {
+      b,
+      scale,
+      width,
+      depth,
+      wallHeight,
+      floors,
+      floorHeight,
+      baseColor,
+      style,
+      frontBackTex,
+      sideTex,
+      wallMat,
+      plainMat,
+    });
+  } else {
+    const walls = new THREE.Mesh(geo, materials);
+    walls.position.y = wallHeight / 2;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    group.add(walls);
+  }
 
   // A slightly wider, darker base plinth so the building looks grounded
   // instead of a box just resting on top of the pavement.
@@ -877,8 +1273,16 @@ export function buildStructure(b, opts) {
   // centered) so it can be swung open — GameEngine rotates `doorHinge`
   // as the player approaches/leaves, the same interaction the yard gate
   // below uses.
-  const doorW = Math.min(width * 0.22, 1.1);
-  const doorH = 1.15;
+  // A real human doorway needs to comfortably clear the character's own
+  // height (1.75 units, see PLAYER_HEIGHT in PhysicsController.js) with
+  // headroom — the previous doorH (1.15) was actually SHORTER than the
+  // character itself, so even though the collision gap was technically
+  // walkable, the door visually looked far too small to fit through
+  // (which is exactly what "too small to enter" looks like). Width gets
+  // the same generous treatment, with a floor so even a narrow shop
+  // front gets a comfortably human-sized doorway, not a slit.
+  const doorW = Math.max(1.3, Math.min(width * 0.24, 1.7));
+  const doorH = 1.85;
   const frame = new THREE.Mesh(
     new THREE.BoxGeometry(doorW + 0.14, doorH + 0.12, 0.1),
     new THREE.MeshStandardMaterial({ color: '#efe6d8', roughness: 0.6 })

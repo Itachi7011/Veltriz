@@ -22,6 +22,8 @@ import * as THREE from 'three';
  * unchanged from v1, so nothing else in the engine needed to change.
  */
 
+const BASE_HEAD_RADIUS = 0.125; // multiplied by `scale` everywhere below — single source of truth for buildFace/buildHair/buildCharacter's head sphere, so they can never disagree about how big the head actually is
+
 function shade(hex, amt) {
   const c = new THREE.Color(hex);
   if (amt >= 0) c.lerp(new THREE.Color('#ffffff'), amt);
@@ -344,7 +346,7 @@ function buildFace(headGroup, { skinMat, skinTone, eyeColor, scale, gender, gene
   const lipMatLower = new THREE.MeshStandardMaterial({ color: lipBaseColor, roughness: 0.5 });
   const innerEarMat = new THREE.MeshStandardMaterial({ color: shade(skinTone, -0.1), roughness: 0.72 });
 
-  const headR = 0.11 * scale;
+  const headR = BASE_HEAD_RADIUS * scale;
 
   // ---- Cheekbones — subtle volume under the eyes, strength per gene ----
   if (g.cheekbone > 0.15) {
@@ -499,7 +501,7 @@ function buildFace(headGroup, { skinMat, skinTone, eyeColor, scale, gender, gene
 }
 
 function buildHair(headGroup, { hairMat, hairStyle, scale, gender, genes }) {
-  const headR = 0.11 * scale;
+  const headR = BASE_HEAD_RADIUS * scale;
   const style = hairStyle || (gender === 'female' ? 'long' : 'short');
   // Hair is built as a sibling of the (archetype-scaled) head mesh, so it
   // needs the same non-uniform scale to actually sit on the head instead
@@ -560,6 +562,25 @@ function buildHair(headGroup, { hairMat, hairStyle, scale, gender, genes }) {
  *   crowd/NPC variety — a stand-in for age/height without new geometry)
  * @returns {{ group: THREE.Group, bones: Object, totalHeight: number }}
  */
+// Bridges the (now narrow-collared) torso top to the actual shoulder/arm
+// socket with an angled capsule — the trapezius/deltoid slope real
+// shoulders have, instead of a flat lathe disc meeting the arm at a hard
+// 90°. Runs from near the base of the neck diagonally out (and slightly
+// down) to the exact same (shoulderX, shoulderY) the arm socket uses, so
+// there's no visible seam between this and the shoulderCap sphere there.
+function addShoulderSlope(torsoGroup, { side, scale, material, collarX, collarY, shoulderX, shoulderY }) {
+  const dx = shoulderX - collarX;
+  const dy = shoulderY - collarY;
+  const length = Math.hypot(dx, dy);
+  const { pivot } = limbSegment({ radius: 0.07 * scale, length, material, radialSegments: 10 });
+  pivot.position.set(collarX, collarY, 0);
+  // limbSegment's capsule extends along local -Y by `length` by
+  // construction — rotate around Z so that -Y instead points from the
+  // collar toward the shoulder socket (dx, dy).
+  pivot.rotation.z = Math.atan2(dx, -dy);
+  torsoGroup.add(pivot);
+}
+
 export function buildCharacter(appearance = {}) {
   const {
     gender = 'male',
@@ -575,8 +596,14 @@ export function buildCharacter(appearance = {}) {
 
   const isFemale = gender === 'female';
   const scale = (isFemale ? 0.95 : 1.0) * buildScale;
-  const shoulderWidth = (isFemale ? 0.3 : 0.38) * scale;
-  const hipWidth = (isFemale ? 0.27 : 0.24) * scale;
+  // Shoulder width relative to head size is what makes a figure read as
+  // "human" vs. "bobblehead" — real adult shoulder span is roughly
+  // 2.5-3x head width, not the ~3.4x (male) this rig used to work out to
+  // once the head-swallowing neck bug and undersized head are accounted
+  // for. Combined with BASE_HEAD_RADIUS's increase above, these land
+  // right in that realistic range.
+  const shoulderWidth = (isFemale ? 0.32 : 0.35) * scale;
+  const hipWidth = (isFemale ? 0.29 : 0.22) * scale;
 
   // Resolve this character's facial genetics once up front — head shape,
   // brow/eye/nose/mouth/ear proportions all derive from this, and it's
@@ -690,39 +717,72 @@ export function buildCharacter(appearance = {}) {
   // Profile now stops at a modest hip radius right above where the legs
   // attach (hips-local y ≈ -0.03), instead of the old separate oversized
   // pelvis sphere that visually swallowed the top of both legs.
+  //
+  // The torso profile ends at a NARROW collar width (not the full
+  // shoulder width) — a lathe can only produce a flat circular disc at
+  // whatever radius it ends on, so ending it at full shoulder width is
+  // what made the shoulder read as a flat "table top" meeting the arm at
+  // a hard 90°. Real shoulders get their width from the trapezius/
+  // deltoid muscle sloping UP AND OUT from the base of the neck to the
+  // point of the shoulder — that slope is added as separate angled
+  // geometry below (addShoulderSlope), bridging this narrow collar to
+  // the actual arm socket position.
+  const collarWidth = shoulderWidth * 0.42;
   const profile = isFemale
     ? [
         [-0.06 * scale, hipWidth * 0.88],
         [0.0 * scale, hipWidth * 1.05],
         [0.06 * scale, shoulderWidth * 0.6],
-        [0.13 * scale, shoulderWidth * 0.82],
-        [shoulderY * 0.82, shoulderWidth * 0.98],
-        [shoulderY, shoulderWidth * 0.86],
+        [0.13 * scale, shoulderWidth * 0.78],
+        [shoulderY * 0.78, shoulderWidth * 0.62],
+        [shoulderY * 0.92, collarWidth],
       ]
     : [
         [-0.06 * scale, hipWidth * 0.78],
         [0.02 * scale, shoulderWidth * 0.72],
-        [0.13 * scale, shoulderWidth * 0.86],
-        [shoulderY * 0.85, shoulderWidth],
-        [shoulderY, shoulderWidth * 0.92],
+        [0.13 * scale, shoulderWidth * 0.84],
+        [shoulderY * 0.78, shoulderWidth * 0.68],
+        [shoulderY * 0.92, collarWidth],
       ];
 
   const torso = buildTorsoLathe({ points: profile, material: shirtMat, segments: 22 });
   torsoGroup.add(torso);
 
+  // Neck — long enough to actually be visible below the jaw instead of
+  // being entirely swallowed by the head sphere sitting right on top of
+  // it (the old neck was only 0.1*scale tall, SHORTER than the head's
+  // own radius of 0.11*scale, so the head completely hid it).
+  const neckLength = 0.17 * scale;
   const neck = new THREE.Group();
   neck.position.y = shoulderY;
   torsoGroup.add(neck);
-  const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * scale, 0.06 * scale, 0.1 * scale, 10), skinMat);
-  neckMesh.position.y = 0.05 * scale;
+  const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.056 * scale, 0.068 * scale, neckLength, 10), skinMat);
+  neckMesh.position.y = neckLength / 2;
   neck.add(neckMesh);
 
   const head = new THREE.Group();
-  head.position.y = 0.1 * scale;
+  // Head sits on TOP of the neck with only a small overlap (for a
+  // natural jaw/neck blend) rather than swallowing the whole neck.
+  head.position.y = neckLength + 0.028 * scale;
   head.userData.baseY = head.position.y;
   neck.add(head);
+  // The whole head — sphere, face, hair — is built facing local +Z, but
+  // this rig's own convention (see CameraRig.js: `rotation.y = yaw +
+  // Math.PI` is what makes the BODY face the direction of travel) needs
+  // the head's front to be -Z for the two to agree. Rather than mirror
+  // every individual coordinate inside buildFace/buildHair (error-prone
+  // across ~40 Z-offset lines), everything is built the "natural" way
+  // and this single 180° turn corrects it — safe to do as one rigid
+  // flip because every feature in buildFace is already constructed as a
+  // left/right MIRRORED pair (eyes, ears, brows, jaw wedges via the
+  // `[-1,1].forEach(side => ...)` pattern), so flipping X along with Z
+  // here just swaps which physical side gets which mirrored value,
+  // which looks identical for a bilaterally mirrored face.
+  const headOrientation = new THREE.Group();
+  headOrientation.rotation.y = Math.PI;
+  head.add(headOrientation);
 
-  const headGeo = new THREE.SphereGeometry(0.11 * scale, 18, 14);
+  const headGeo = new THREE.SphereGeometry(BASE_HEAD_RADIUS * scale, 18, 14);
   const headMesh = new THREE.Mesh(headGeo, skinMat);
   // Head silhouette comes from the resolved face archetype (oval / round
   // / square / heart / long) instead of one fixed proportion for every
@@ -730,10 +790,10 @@ export function buildCharacter(appearance = {}) {
   // actually looks different from that one".
   headMesh.scale.set(genes.headScale[0], genes.headScale[1], genes.headScale[2]);
   headMesh.castShadow = true;
-  head.add(headMesh);
+  headOrientation.add(headMesh);
 
-  buildFace(head, { skinMat, skinTone, eyeColor, scale, gender, genes });
-  buildHair(head, { hairMat, hairStyle, scale, gender, genes });
+  buildFace(headOrientation, { skinMat, skinTone, eyeColor, scale, gender, genes });
+  buildHair(headOrientation, { hairMat, hairStyle, scale, gender, genes });
 
   const upperArmLength = 0.27 * scale;
   const forearmLength = 0.25 * scale;
@@ -743,6 +803,20 @@ export function buildCharacter(appearance = {}) {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * shoulderWidth * 0.88, shoulderY * 0.94, 0);
     torsoGroup.add(shoulder);
+
+    // The sloped trapezius/deltoid bridge from the narrow collar (where
+    // the torso lathe now actually ends) out to this exact shoulder
+    // socket — see addShoulderSlope's own comment for why the lathe
+    // alone can't produce this slope.
+    addShoulderSlope(torsoGroup, {
+      side,
+      scale,
+      material: shirtMat,
+      collarX: side * collarWidth * 0.75,
+      collarY: shoulderY * 0.9,
+      shoulderX: shoulder.position.x,
+      shoulderY: shoulder.position.y,
+    });
 
     const shoulderCap = new THREE.Mesh(new THREE.SphereGeometry(0.072 * scale, 12, 10), shirtMat);
     shoulder.add(shoulderCap);
@@ -803,6 +877,15 @@ export function buildCharacter(appearance = {}) {
   return {
     group: root,
     totalHeight,
+    // Distance from this rig's root (which represents ground/feet level
+    // — see how on-foot movement places the root directly at
+    // physics.position.y) up to the hip pivot. Anything that wants to
+    // seat this character somewhere OTHER than standing on the ground —
+    // a car seat, a bike saddle — needs to place the root at
+    // (desired hip height − hipOffset), not at the desired hip height
+    // directly, or the character ends up floating a hip-height too high
+    // (exactly the "sitting on the car roof" bug this fixes).
+    hipOffset: legTopY,
     scale,
     faceType: genes.faceType,
     bones: {
@@ -820,11 +903,18 @@ export function buildCharacter(appearance = {}) {
  * Procedurally animates a built rig each frame — walk cycle, idle
  * breathing, and head look. `speedFactor` is 0 (idle) to 1 (full run).
  */
-export function animateCharacter(bones, { time, speedFactor = 0, headPitch = 0, isGrounded = true, jumpT = 0 }) {
+export function animateCharacter(bones, { time, speedFactor = 0, headPitch = 0, isGrounded = true, jumpT = 0, onRamp = false }) {
   const swing = Math.min(1, speedFactor);
   const freq = 7 + speedFactor * 4;
-  const amp = 0.55 * swing;
-  const t = time * freq;
+  // Climbing/descending a staircase gets a noticeably higher knee-lift
+  // and a slower cadence than flat-ground walking — same idea as a real
+  // person visibly stepping UP onto something rather than striding, and
+  // it only ever applies while PhysicsController reports the player is
+  // actually within a registered stair/ramp footprint (onRamp), so
+  // normal flat-ground walking/running is completely unaffected.
+  const stepLift = onRamp ? 1.55 : 1;
+  const amp = 0.55 * swing * stepLift;
+  const t = time * (onRamp ? freq * 0.8 : freq);
 
   // Every position/scale value below is computed as an ABSOLUTE offset
   // from the bone's stored baseline (`userData.baseY`/`baseScaleY`) each
@@ -838,8 +928,12 @@ export function animateCharacter(bones, { time, speedFactor = 0, headPitch = 0, 
   if (swing > 0.01) {
     bones.upperLegLeft.rotation.x = Math.sin(t) * amp;
     bones.upperLegRight.rotation.x = -Math.sin(t) * amp;
-    bones.lowerLegLeft.rotation.x = Math.max(0, -Math.sin(t + 0.6) * amp * 1.1);
-    bones.lowerLegRight.rotation.x = Math.max(0, Math.sin(t + 0.6) * amp * 1.1);
+    // On stairs, the trailing knee also bends further (not just the
+    // lifting one) — a real stair-climbing stride keeps both knees more
+    // bent than a flat-ground stride does.
+    const lowerLegBase = onRamp ? amp * 0.35 : 0;
+    bones.lowerLegLeft.rotation.x = Math.max(lowerLegBase, -Math.sin(t + 0.6) * amp * 1.1);
+    bones.lowerLegRight.rotation.x = Math.max(lowerLegBase, Math.sin(t + 0.6) * amp * 1.1);
 
     bones.upperArmLeft.rotation.x = -Math.sin(t) * amp * 0.8;
     bones.upperArmRight.rotation.x = Math.sin(t) * amp * 0.8;

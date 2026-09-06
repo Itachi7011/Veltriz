@@ -28,6 +28,10 @@ export class CameraRig {
     this.pitch = -0.12;
     this.minPitch = -1.15;
     this.maxPitch = 1.0;
+    // Settings-controlled — see GameEngine.applySettings(). Defaults
+    // match the previous hardcoded behavior exactly.
+    this.sensitivity = 0.0024;
+    this.invertY = false;
 
     // Weapon recoil kick — added on top of mouse-driven aim, decays back
     // to zero on its own each frame. Kept separate from `pitch`/`yaw` so
@@ -65,9 +69,9 @@ export class CameraRig {
 
   _onMouseMove(e) {
     if (!this._pointerLocked) return;
-    const sensitivity = 0.0024;
+    const sensitivity = this.sensitivity;
     this.yaw -= e.movementX * sensitivity;
-    this.pitch -= e.movementY * sensitivity;
+    this.pitch -= e.movementY * sensitivity * (this.invertY ? -1 : 1);
     this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, this.pitch));
   }
 

@@ -28,6 +28,11 @@ const VehicleHUD = () => {
         <div className="veltriz-vehicle-hud-name">{driving.name}</div>
         <div className="veltriz-vehicle-hud-hint">
           <kbd>F</kbd> exit &nbsp;·&nbsp; <kbd>Space</kbd> handbrake
+          {driving.hasTrunk && (
+            <>
+              &nbsp;·&nbsp; <kbd>T</kbd> {driving.trunkOpen ? 'close' : 'open'} trunk
+            </>
+          )}
         </div>
       </div>
     );
