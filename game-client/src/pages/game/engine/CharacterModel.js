@@ -167,13 +167,13 @@ function resolveFaceGenes(appearance = {}) {
 // pivot rotates it exactly like a real limb joint would. Using a capsule
 // (rounded ends) instead of a flat-ended cylinder means adjacent segments
 // blend together at the joint instead of showing a hard seam.
-function limbSegment({ radius, length, material, radialSegments = 8, capSegments = 4 }) {
+function limbSegment({ radius, length, material, radialSegments = 8, capSegments = 4, castShadow = true, receiveShadow = true }) {
   const cylLength = Math.max(0.001, length - radius * 2);
   const geo = new THREE.CapsuleGeometry(radius, cylLength, capSegments, radialSegments);
   geo.translate(0, -length / 2, 0);
   const mesh = new THREE.Mesh(geo, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = receiveShadow;
   const pivot = new THREE.Group();
   pivot.add(mesh);
   pivot.userData.length = length;
@@ -266,6 +266,8 @@ function buildHand({ skinMat, scale, gender }) {
       material: skinMat,
       radialSegments: 6,
       capSegments: 2,
+      castShadow: false,
+      receiveShadow: false,
     });
     base.pivot.position.set(offsetX, -0.1 * scale, 0);
     base.pivot.rotation.x = 0.42 + (i === 0 || i === 3 ? 0.1 : 0);
@@ -277,6 +279,8 @@ function buildHand({ skinMat, scale, gender }) {
       material: skinMat,
       radialSegments: 6,
       capSegments: 2,
+      castShadow: false,
+      receiveShadow: false,
     });
     tip.pivot.position.y = -fingerBaseLen * lenMult;
     tip.pivot.rotation.x = 0.35;
@@ -295,6 +299,8 @@ function buildHand({ skinMat, scale, gender }) {
     material: skinMat,
     radialSegments: 6,
     capSegments: 2,
+    castShadow: false,
+    receiveShadow: false,
   });
   thumbBase.pivot.position.set(0.052 * scale * (gender === 'female' ? 0.95 : 1), -0.04 * scale, 0.018 * scale);
   thumbBase.pivot.rotation.z = -0.85;
@@ -307,6 +313,8 @@ function buildHand({ skinMat, scale, gender }) {
     material: skinMat,
     radialSegments: 6,
     capSegments: 2,
+    castShadow: false,
+    receiveShadow: false,
   });
   thumbTip.pivot.position.y = -thumbBaseLen;
   thumbTip.pivot.rotation.x = 0.2;
@@ -746,7 +754,40 @@ export function buildCharacter(appearance = {}) {
       ];
 
   const torso = buildTorsoLathe({ points: profile, material: shirtMat, segments: 22 });
+  // A lathe is inherently radially symmetric — its front and back are
+  // mathematically IDENTICAL at every height, which is why the torso
+  // used to look the same from behind as from the front no matter the
+  // body type. The fix has two parts, and BOTH matter: squashing the
+  // lathe itself flatter front-to-back (0.62, well below its own widest
+  // profile radius) so it stops being the dominant silhouette, and THEN
+  // adding front-only volume (chest/belly) and back-only volume
+  // (shoulder blades) that actually protrudes past that flattened base
+  // — an asymmetric bulge added on top of an unchanged, still-wide
+  // circular cross-section would just sit flush with the surface and be
+  // invisible, which is what a smaller first attempt at this ran into.
+  torso.scale.z = 0.62;
   torsoGroup.add(torso);
+
+  const chestBulge = new THREE.Mesh(new THREE.SphereGeometry(shoulderWidth * (isFemale ? 0.54 : 0.6), 12, 10), shirtMat);
+  chestBulge.scale.set(1, isFemale ? 0.6 : 0.78, 0.62);
+  chestBulge.position.set(0, chestHeight * (isFemale ? 0.95 : 0.7), shoulderWidth * 0.42);
+  chestBulge.castShadow = true;
+  torsoGroup.add(chestBulge);
+
+  const bellyBulge = new THREE.Mesh(new THREE.SphereGeometry(shoulderWidth * 0.52, 10, 8), shirtMat);
+  bellyBulge.scale.set(0.95, 0.72, 0.58);
+  bellyBulge.position.set(0, 0.02 * scale, shoulderWidth * 0.34);
+  torsoGroup.add(bellyBulge);
+
+  // Shoulder blades — subtle, but enough that the back reads as a back
+  // (with the spine's natural inward curve between them) instead of a
+  // mirror of the chest.
+  [-1, 1].forEach((side) => {
+    const blade = new THREE.Mesh(new THREE.SphereGeometry(shoulderWidth * 0.26, 8, 6), shirtMat);
+    blade.scale.set(1, 1.25, 0.4);
+    blade.position.set(side * shoulderWidth * 0.34, shoulderY * 0.58, -shoulderWidth * 0.4);
+    torsoGroup.add(blade);
+  });
 
   // Neck — long enough to actually be visible below the jaw instead of
   // being entirely swallowed by the head sphere sitting right on top of
@@ -807,13 +848,18 @@ export function buildCharacter(appearance = {}) {
     // The sloped trapezius/deltoid bridge from the narrow collar (where
     // the torso lathe now actually ends) out to this exact shoulder
     // socket — see addShoulderSlope's own comment for why the lathe
-    // alone can't produce this slope.
+    // alone can't produce this slope. The collar point sits ABOVE
+    // shoulderY (partway up the side of the neck) and further inward,
+    // so there's a real vertical drop as well as horizontal reach out to
+    // the arm socket — a shallow height difference here is exactly what
+    // read as "flat / 90°" before, even though a slope technically
+    // existed.
     addShoulderSlope(torsoGroup, {
       side,
       scale,
       material: shirtMat,
-      collarX: side * collarWidth * 0.75,
-      collarY: shoulderY * 0.9,
+      collarX: side * collarWidth * 0.6,
+      collarY: shoulderY * 1.15,
       shoulderX: shoulder.position.x,
       shoulderY: shoulder.position.y,
     });
@@ -867,7 +913,14 @@ export function buildCharacter(appearance = {}) {
 
   root.traverse((obj) => {
     if (obj.isMesh) {
-      obj.castShadow = true;
+      // Same reasoning as VehicleModel's equivalent pass: only meshes
+      // above a small-size threshold cast shadows — a character has
+      // ~20 tiny finger/thumb segments alone, and this blanket pass was
+      // overriding the castShadow:false already set on them above.
+      // Everything still receives shadows normally.
+      obj.geometry.computeBoundingSphere();
+      const isTiny = obj.geometry.boundingSphere.radius < 0.025 * scale;
+      obj.castShadow = !isTiny;
       obj.receiveShadow = true;
     }
   });

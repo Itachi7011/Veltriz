@@ -439,7 +439,16 @@ export function buildVehicle(vehicleKey) {
   const built = ['bike', 'motorbike'].includes(def.kind) ? buildBikeLike(def.kind, def.frame, color) : buildCarLike(def.kind, color);
   built.group.traverse((o) => {
     if (o.isMesh) {
-      o.castShadow = true;
+      // Every small decorative mesh (spokes, mirrors, door seams, lights,
+      // the stripe decal, hub caps...) was blanket-getting castShadow
+      // here regardless of size — a sedan alone has ~20 wheel-spoke
+      // boxes plus another dozen-plus trim details, and multiplied
+      // across every vehicle on the map that's a lot of shadow-casters
+      // for detail nobody would notice the shadow of. Only meshes above
+      // a small-size threshold (chassis, cabin panels, wheels, cargo
+      // bed) keep casting; everything still receives shadows normally.
+      o.geometry.computeBoundingSphere();
+      o.castShadow = o.geometry.boundingSphere.radius > 0.09;
       o.receiveShadow = true;
     }
   });

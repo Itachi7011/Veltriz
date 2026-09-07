@@ -262,6 +262,13 @@ export default class GameEngine {
       this.scene.add(group);
       this.houseEntries.push({ data: h, group, footprint, doorHinge, gateHinge, doorOpen: 0, gateOpen: 0 });
     });
+
+    // Precomputed once — buildings/houses never change after world load,
+    // so _updateDoorsAndGates (which runs every frame) can iterate this
+    // directly instead of allocating a fresh [...a, ...b] concatenation
+    // 60 times a second, which was pure avoidable garbage-collector
+    // pressure on a map with hundreds of structures.
+    this._allStructureEntries = [...this.buildingEntries, ...this.houseEntries];
   }
 
   // ------------------------------------------------------------- PLAYER
@@ -931,7 +938,10 @@ export default class GameEngine {
       g.position.x += dx * 0.2;
       g.position.z += dz * 0.2;
       if (Math.hypot(dx, dz) > 0.01) {
-        g.rotation.y = Math.atan2(dx, dz);
+        // +PI — same fix as NpcSystem.js's wander movement: without it,
+        // other players in a multiplayer session would visibly walk
+        // backward (facing away from their own direction of travel).
+        g.rotation.y = Math.atan2(dx, dz) + Math.PI;
       }
       animateCharacter(entry.rig.bones, {
         time: performance.now() / 1000,
@@ -962,7 +972,7 @@ export default class GameEngine {
       entry.group.visible = d < this.renderDist.building;
     });
 
-    this._nearbyCollidables = [...this.buildingEntries, ...this.houseEntries]
+    this._nearbyCollidables = this._allStructureEntries
       .filter((e) => {
         const d = Math.hypot(e.footprint.x - pos.x, e.footprint.z - pos.z);
         return d < this.renderDist.nearbyCollidable;
@@ -999,8 +1009,7 @@ export default class GameEngine {
       hinge.rotation.y += (target - hinge.rotation.y) * Math.min(1, dt * SWING_SPEED);
     };
 
-    [...this.buildingEntries, ...this.houseEntries].forEach((entry) => {
-      if (!entry.doorHinge && !entry.gateHinge) return;
+    this._allStructureEntries.forEach((entry) => {
       // Skip anything not currently rendered (culled far away) — no
       // point animating a hinge nobody can see, and this keeps the cost
       // of this pass tied to the already-culled visible set.

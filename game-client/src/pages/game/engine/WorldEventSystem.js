@@ -209,12 +209,15 @@ export class WorldEventSystem {
         const step = Math.min(dist, 1.3 * dt);
         pos.x += (dx / dist) * step;
         pos.z += (dz / dist) * step;
-        npc.rig.group.rotation.y = Math.atan2(dx, dz);
+        // +PI — same fix/reasoning as NpcSystem.js's wander movement:
+        // atan2(dx,dz) alone points the rig's face opposite its walk
+        // direction (verified against CharacterModel's local -Z front).
+        npc.rig.group.rotation.y = Math.atan2(dx, dz) + Math.PI;
         animateCharacter(npc.rig.bones, { time: now / 1000, speedFactor: 0.4 });
       } else if (!ev.factionA) {
         const fx = ev.x - pos.x;
         const fz = ev.z - pos.z;
-        if (Math.hypot(fx, fz) > 0.5) npc.rig.group.rotation.y = Math.atan2(fx, fz);
+        if (Math.hypot(fx, fz) > 0.5) npc.rig.group.rotation.y = Math.atan2(fx, fz) + Math.PI;
         const freq = ev.config.agitated ? 7 : 3;
         const amp = ev.config.agitated ? 0.5 : 0.25;
         const bob = Math.sin((now / 1000) * freq + pos.x * 3) * amp;
@@ -223,7 +226,7 @@ export class WorldEventSystem {
         npc.rig.bones.hips.rotation.y = bob * 0.08;
       } else {
         const oppositeZ = ev.z - (pos.z - ev.z);
-        npc.rig.group.rotation.y = Math.atan2(ev.x - pos.x, oppositeZ - pos.z);
+        npc.rig.group.rotation.y = Math.atan2(ev.x - pos.x, oppositeZ - pos.z) + Math.PI;
         const bob = Math.sin((now / 1000) * 6 + pos.x * 2) * 0.4;
         npc.rig.bones.upperArmRight.rotation.x = -1.1 - Math.max(0, bob);
       }

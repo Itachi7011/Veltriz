@@ -278,7 +278,16 @@ export class NpcSystem {
         const step = Math.min(dist, npc.speed * dt);
         pos.x += (dx / dist) * step;
         pos.z += (dz / dist) * step;
-        npc.rig.group.rotation.y = Math.atan2(dx, dz);
+        // +PI here matters: the character rig's own local "front" is
+        // local -Z (see CharacterModel.js's headOrientation fix), and
+        // Math.atan2(dx,dz) alone gives the angle whose (sin,cos) IS the
+        // walk direction itself — applying that directly as rotation.y
+        // would point the rig's face at -(dx,dz), i.e. exactly backward
+        // from where it's walking. This is the same +PI the player's own
+        // rotation.y = yaw + Math.PI already includes (see CameraRig.js);
+        // NPCs were missing it, so they visibly walked away from the
+        // camera showing their face instead of their back.
+        npc.rig.group.rotation.y = Math.atan2(dx, dz) + Math.PI;
         speedFactor = npc.chasing ? 1 : 0.45;
         if (npc.phoneUntil) {
           clearPhonePose(npc.rig.bones);

@@ -823,7 +823,12 @@ function addStaircase(group, flight) {
     const stepZ = localZFront - treadDepth * i - treadDepth / 2;
     const step = new THREE.Mesh(new THREE.BoxGeometry(stairWidth, Math.max(0.05, riser), treadDepth * 1.02), stepMat);
     step.position.set(localX, stepY - riser / 2, stepZ);
-    step.castShadow = true;
+    // No shadow casting on individual steps — each one is small and
+    // tightly packed against the next, so the shadow contribution is
+    // barely visible anyway, but a house with a full flight (~13 steps)
+    // multiplied across a map with 100+ multi-floor houses turns into
+    // well over a thousand shadow-casting objects for something nobody
+    // would notice missing. Still receives shadows/lighting normally.
     step.receiveShadow = true;
     group.add(step);
   }
