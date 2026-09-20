@@ -122,7 +122,16 @@ function buildCarLike(kind, color) {
   rocker.position.set(0, chassisY - dims.h * 0.42, 0);
   g.add(rocker);
 
-  const cabinCenterX = kind === 'truck' ? -dims.len * 0.22 : dims.len * dims.cabinOffset * 0.1;
+  // Truck cab sits toward the FRONT (same end as the headlights, +X —
+  // matching a real pickup's silhouette: windshield/cab up front, cargo
+  // bed trailing behind), with the bed occupying the rear half. These
+  // were previously swapped — cab near the taillights, bed near the
+  // headlights — which meant a truck visually drove bed-first: the
+  // "front" of the vehicle you'd expect to lead (the cab, with the
+  // driver in it) was actually trailing behind while driving forward,
+  // which looks and feels exactly like driving in reverse even though
+  // the underlying heading/movement math was correct.
+  const cabinCenterX = kind === 'truck' ? dims.len * 0.22 : dims.len * dims.cabinOffset * 0.1;
   const cabinFloorY = chassisY + dims.h / 2;
   const cabinRoofY = cabinFloorY + dims.cabinH;
   const cabinHalfLen = dims.cabinLen / 2;
@@ -184,13 +193,14 @@ function buildCarLike(kind, color) {
   if (kind === 'truck') {
     const bedWalls = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3 });
     const bed = new THREE.Mesh(new THREE.BoxGeometry(dims.len * 0.48, 0.32, dims.w), bedWalls);
-    bed.position.set(dims.len * 0.24, chassisY + dims.h / 2 + 0.16, 0);
+    // Rear half, behind the cab — see cabinCenterX's comment above.
+    bed.position.set(-dims.len * 0.24, chassisY + dims.h / 2 + 0.16, 0);
     bed.castShadow = true;
     g.add(bed);
     // Bed floor slats (the corrugated-look pickup bed floor).
     for (let i = 0; i < 5; i++) {
       const slat = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, dims.w * 0.94), trimMat);
-      slat.position.set(dims.len * 0.05 + i * (dims.len * 0.4) / 5, chassisY + dims.h / 2 + 0.33, 0);
+      slat.position.set(-dims.len * 0.05 - (i * (dims.len * 0.4)) / 5, chassisY + dims.h / 2 + 0.33, 0);
       g.add(slat);
     }
   }

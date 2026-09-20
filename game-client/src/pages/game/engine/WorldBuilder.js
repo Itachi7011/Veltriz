@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HOUSE_SIZE_MULTIPLIER } from './BuildingBuilder';
 
 const ZONE_THEME = {
   old_meridian: { ground: '#3a4a3a', ground2: '#334033', label: '#c7d2fe', road: '#2b2e38' },
@@ -164,18 +165,33 @@ export function buildWorld(scene, mapConfig, scale) {
     group.add(labelSprite);
   });
 
-  // Paved aprons under buildings/houses.
+  // Paved aprons under buildings/houses. Houses use HOUSE_SIZE_MULTIPLIER
+  // (the same factor BuildingBuilder.js's actual house walls are built
+  // with — imported from there, not duplicated, so the two can never
+  // drift apart again) since they render notably larger than the raw
+  // map-data footprint; without it, a house's own walls visually
+  // overflow past the edge of its paved sidewalk base and onto the grass.
+  // Regular buildings use their own (smaller, unchanged) factor.
   const sidewalkTex = sidewalkTexture();
   const apronGeo = new THREE.PlaneGeometry(1, 1);
   const apronMat = new THREE.MeshStandardMaterial({ map: sidewalkTex, roughness: 1 });
-  const allStructures = [...buildings, ...houses];
-  allStructures.forEach((b) => {
+  buildings.forEach((b) => {
     const w = b.width * scale + 1.4;
     const d = b.height * scale + 1.4;
     const apron = new THREE.Mesh(apronGeo, apronMat);
     apron.rotation.x = -Math.PI / 2;
     apron.scale.set(w, d, 1);
     apron.position.set(b.x * scale, 0.005, b.y * scale);
+    apron.receiveShadow = true;
+    group.add(apron);
+  });
+  houses.forEach((h) => {
+    const w = h.width * scale * HOUSE_SIZE_MULTIPLIER + 1.4;
+    const d = h.height * scale * HOUSE_SIZE_MULTIPLIER + 1.4;
+    const apron = new THREE.Mesh(apronGeo, apronMat);
+    apron.rotation.x = -Math.PI / 2;
+    apron.scale.set(w, d, 1);
+    apron.position.set(h.x * scale, 0.005, h.y * scale);
     apron.receiveShadow = true;
     group.add(apron);
   });
